@@ -51,4 +51,7 @@ test('client menu carries the cross-platform terminal ids and labels', () => {
   for (const id of ['gitbash', 'windowsterminal', 'gnometerminal', 'konsole']) {
     assert.ok(source.includes(`'app.${id}':`), `missing a locale label for ${id}`)
   }
+  // The menu intersects the official probe with the plugin's own availability
+  // list so resolver version skew can never show a dead menu entry.
+  assert.ok(source.includes('state.info.available'), 'menu intersects info.available')
 })

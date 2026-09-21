@@ -42,16 +42,20 @@ The plugin aligns with the official `open-in-app` mechanism — the **official
 resolver probed against the local machine**, no configuration:
 
 - The host half loads the resolver library straight out of the official
-  `@deepseek-ai/dsh-host-open-in-app` package, resolves every application
-  through the exact locator chains the official routes use, and launches the
-  resolved executable with the file path appended (`open -a <bundle> <file>` on
-  macOS, a direct spawn of the resolved exe on Windows/Linux). When the
-  official catalog gains an app or revises a locator spelling, the plugin
-  follows with a dependency upgrade.
-- The browser half reads the official probe result (`GET /open-in-app/apps`)
-  and shows only the intersection: apps the official probe verified on this
-  machine **and** the plugin whitelists. Newly installed apps appear after the
-  next `dsh web` restart; uninstalled apps disappear immediately.
+  `@deepseek-ai/dsh-host-open-in-app` package (exact-pinned), resolves every
+  application through the exact locator chains the official routes use, and
+  launches the resolved executable with the file path appended (`open -a
+  <bundle> <file>` on macOS, a direct spawn of the resolved exe on
+  Windows/Linux). When the official catalog gains an app or revises a locator
+  spelling, the plugin follows with a release upgrade.
+- The browser half intersects the official probe result
+  (`GET /open-in-app/apps`) with the **local resolution result** the plugin's
+  own info route reports (`available`): an app appears only when the official
+  probe verified it, the plugin's resolver resolved it, and it is whitelisted —
+  so even a version skew between the plugin's resolver copy and the host dsh's
+  can never reproduce "the menu shows it, the click 400s". Newly installed
+  apps appear after the next `dsh web` restart; uninstalled apps disappear
+  immediately.
 - Icons come from the official icon route (`GET /open-in-app/icon/<id>`) — the
   same real application icons as the session header (extracted from the
   executable on Windows); a generic glyph stands in when missing.
@@ -73,6 +77,9 @@ official `POST /open-in-app/open` route with the parent directory).
 
 ```sh
 # local directory (link: — source edits apply directly)
+# ⚠️ run npm install inside the checkout first for link: installs:
+#    plugin dependencies resolve from the checkout's own node_modules
+npm install    # in the checkout (skip for npm/git installs — pnpm brings the deps)
 npx @deepseek-ai/dsh plugin --profile web add link:/absolute/path/to/dsh-plugin-file-actions -w
 
 # from GitHub
@@ -134,8 +141,8 @@ Restart `dsh web` afterwards.
 | `ERR_PNPM_ADDING_TO_ROOT` | the `-w` flag was dropped |
 | Installed but the UI is unchanged | restart `dsh web` (bundle layers don't hot-reload), then refresh the page |
 | The extended menu never appears on cards | fiber probing failed and the plugin fell back to the official chevron (see known limitations); check the DevTools console first |
-| `dsh web` boot log says `file-actions: cannot load the official open-in-app resolver` | the official dependency did not install with the plugin — reinstall with `dsh plugin --profile web update dsh-plugin-file-actions -w`; if it persists, check the `@deepseek-ai/dsh-host-open-in-app` version against the known limitations |
-| An editor/terminal is missing from the menu | the official probe did not resolve it (does it appear in the official split-button menu?) — the plugin only shows the intersection |
+| `dsh web` boot log shows a `file-actions:` error, or `Cannot find package '@deepseek-ai/dsh-host-open-in-app'` | the official dependency is missing or unresolvable — for `link:` installs run `npm install` inside the checkout; for npm/git installs reinstall with `dsh plugin --profile web update dsh-plugin-file-actions -w` |
+| An editor/terminal is missing from the menu | the app was not verified by BOTH the official probe and the plugin's own resolution (does it appear in the official split-button menu?) — both intersections must pass |
 
 ## ⚙️ Configuration
 
@@ -185,7 +192,7 @@ credential-scrubbed environment; the terminal outlives dsh):
 | Terminal.app | macOS | AppleScript `do script "cd <dir> && <command>"` |
 | Ghostty | macOS / Linux | macOS `open -na Ghostty --args -e`; Linux `ghostty --working-directory=<dir> -e bash -c` |
 | Windows Terminal | Windows | `wt -d <dir> cmd /k` with the command line passed through the `%FILE_ACTIONS_RUN_CMD%` environment variable — the token holds no whitespace, so wt's command-line reconstruction cannot mangle it, and cmd expands it at execution time |
-| Git Bash | Windows | `<Git>/usr/bin/mintty.exe -e <Git>/usr/bin/bash.exe -c "cd <dir> && <command>; exec bash -l -i"` (`CHERE_INVOKING=1` keeps the login shell from cd-ing home) |
+| Git Bash | Windows | `<Git>/usr/bin/mintty.exe -e <Git>/usr/bin/bash.exe -l -c "cd <dir> && <command>; exec '<Git>/usr/bin/bash.exe' -l -i"` (the shells always run by absolute path — a bare `exec bash` resolves through the Windows PATH to WSL's `system32\bash.exe`; `CHERE_INVOKING=1` keeps the login shell from cd-ing home) |
 | GNOME Terminal / Konsole | Linux | `--working-directory` / `--workdir` + `bash -c "<command>; exec bash -i"` |
 
 POSIX terminals keep an interactive shell after the command ends (matching
@@ -212,20 +219,26 @@ the official chevron, and mounts a style-consistent plugin menu button.
   dictionaries. What appears is decided entirely by the official probe (the
   official catalog declares no win32 locators for Zed, so Zed never shows on
   Windows, for example).
-- **Run commands are recognized by extension.** Files with an unmapped
-  extension are greyed out (the client cannot see the execute bit); on Windows
-  "execute bit" is derived from the extension (`.exe`/`.bat`/`.cmd`, etc.).
+- **Run commands are recognized by extension.** Unmapped extensions get the
+  "run" offer based on executability: POSIX consults the execute bit (which the
+  client cannot see), Windows derives it from the extension
+  (`.exe`/`.bat`/`.cmd`/`.com` — chmod has no effect there; `.bat`/`.cmd` map
+  to `cmd /c` by default). Extension-less files get no "run" offer on Windows.
   Configure `runCommands` when needed.
 - **Windows Terminal run commands go through cmd.** The command string is
   executed by `cmd /k`, so cmd metacharacters in configured values are
   expanded; run `.sh` scripts in the Git Bash terminal instead (its command
   executes in an MSYS bash context). Git Bash "run" relies on the mintty that
   ships with a full Git for Windows install.
-- **The official dependency's internal module layout.** The host locates
+- **The official dependency is exact-pinned.** The host locates
   `@deepseek-ai/dsh-host-open-in-app`'s `lib/types/resolver.js` through its
   package manifest (shipped in the published tarball, with multiple layouts
-  tried per version); if a future version changes the layout, the plugin fails
-  loudly at activation instead of silently degrading.
+  tried per version); the dependency is pinned to `0.1.6-alpha.2` and does not
+  drift on `dsh plugin update`. The host dsh carries its own resolver copy —
+  any skew between the two is bridged by the client's double intersection
+  (official probe ∩ plugin resolution). If a future version changes the
+  layout, the plugin fails loudly at activation with a `file-actions:` error
+  instead of silently degrading.
 - **Fiber-based augmentation.** If a dsh upgrade changes the presented-file
   card internals, the menu may stop appearing (the official chevron is restored
   automatically); updating the fiber probe and selectors restores it.
@@ -243,7 +256,9 @@ plus one integration test that loads the real official resolver library.
 
 > [!TIP]
 > With a `link:` install, edits to `lib/client.js` hot-swap into the running
-> `dsh web` without a restart; host-half changes need a restart.
+> `dsh web` without a restart; host-half changes need a restart — and the
+> checkout must have `npm install` run first (dependencies resolve from the
+> checkout's `node_modules`).
 
 ## 📄 License
 

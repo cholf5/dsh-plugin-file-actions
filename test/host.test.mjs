@@ -91,6 +91,10 @@ test('info serves editors, the cross-platform terminal set, and run extensions',
     ['ghostty', 'gitbash', 'gnometerminal', 'konsole', 'terminal', 'windowsterminal'],
   )
   assert.ok(data.runExtensions.includes('py') && data.runExtensions.includes('bat'))
+  // The plugin's own resolution ids ride along so the browser can intersect
+  // them with the official probe (kills version-skew false menu entries).
+  assert.ok(Array.isArray(data.available))
+  assert.ok(data.available.includes('vscode') && data.available.includes('gitbash'))
 })
 
 test('launch (win32) starts the resolved editor executable with the file path', async () => {
@@ -205,18 +209,37 @@ test('run (win32) double-quotes spaced paths inside the env-carried command', as
   assert.equal(spawn.options.env.FILE_ACTIONS_RUN_CMD, `python "${file}"`)
 })
 
-test('run (win32) executes the file itself through the execute-bit fallback', async () => {
+test('run (win32) executes the file itself through the extension-derived fallback', async () => {
+  // Windows derives executability from the extension (exe/bat/cmd/com) —
+  // chmod has no effect there — so a .exe file runs with no mapping at all,
+  // deterministically on every development machine.
   const { seam, launched } = win32Seam()
+  const routes = await routesWith(seam)
+  const dir = mkdtempSync(join(tmpdir(), 'fa-test-'))
+  const file = join(dir, 'tool.exe')
+  writeFileSync(file, 'MZ\x90\x00\x03')
+  const res = mockRes()
+  await routes.get('/api/file-actions/run')(mockReq('POST', JSON.stringify({ app: 'windowsterminal', path: file })), res)
+  assert.equal(res.statusCode, 200)
+  const spawn = launched.find((entry) => entry.kind === 'spawn')
+  assert.equal(spawn.options.env.FILE_ACTIONS_RUN_CMD, file)
+})
+
+test('run (posix) executes the file itself through the execute-bit fallback', async () => {
+  const commands = []
+  const { seam } = win32Seam({
+    platform: 'darwin',
+    runCommand: async (command, args) => { commands.push({ command, args }) },
+  })
   const routes = await routesWith(seam)
   const dir = mkdtempSync(join(tmpdir(), 'fa-test-'))
   const file = join(dir, 'tool.bin')
   writeFileSync(file, '\x7fELF')
   chmodSync(file, 0o755)
   const res = mockRes()
-  await routes.get('/api/file-actions/run')(mockReq('POST', JSON.stringify({ app: 'windowsterminal', path: file })), res)
+  await routes.get('/api/file-actions/run')(mockReq('POST', JSON.stringify({ app: 'terminal', path: file })), res)
   assert.equal(res.statusCode, 200)
-  const spawn = launched.find((entry) => entry.kind === 'spawn')
-  assert.equal(spawn.options.env.FILE_ACTIONS_RUN_CMD, file)
+  assert.ok(commands[0].args[1].includes(`do script "cd '${dir}' && '${file}'"`))
 })
 
 test('run (win32) opens Git Bash through its own mintty with the cd script', async () => {
@@ -232,9 +255,12 @@ test('run (win32) opens Git Bash through its own mintty with the cd script', asy
   assert.ok(spawn.command.endsWith('mintty.exe'))
   assert.equal(spawn.args[0], '-e')
   assert.ok(spawn.args[1].endsWith('bash.exe'))
-  assert.equal(spawn.args[2], '-c')
-  assert.ok(spawn.args[3].startsWith(`cd '${dir}' && 'python' '${file}'`), spawn.args[3])
-  assert.ok(spawn.args[3].endsWith('exec bash -l -i'), spawn.args[3])
+  assert.equal(spawn.args[2], '-l')
+  assert.equal(spawn.args[3], '-c')
+  assert.ok(spawn.args[4].startsWith(`cd '${dir}' && 'python' '${file}'`), spawn.args[4])
+  // The keep-open shell must be the Git bash by absolute path — a bare
+  // `exec bash` resolves through the Windows PATH to WSL's system32 bash.
+  assert.ok(spawn.args[4].endsWith(`exec '${spawn.args[1]}' -l -i`), spawn.args[4])
   assert.equal(spawn.options.env.CHERE_INVOKING, '1')
 })
 
@@ -283,7 +309,11 @@ test('run (darwin) keeps the historical Terminal.app and Ghostty spellings', asy
   await routes.get('/api/file-actions/run')(mockReq('POST', JSON.stringify({ app: 'terminal', path: file })), terminalRes)
   assert.equal(terminalRes.statusCode, 200)
   assert.equal(commands[0].command, 'osascript')
-  assert.ok(commands[0].args[1].includes(`do script "cd '${dir}' && python3 '${file}'"`))
+  // The do-script literal doubles backslashes and quotes exactly like the
+  // implementation, so the assertion holds on Windows temp paths too.
+  const script = `cd '${dir}' && python3 '${file}'`
+  const doScript = script.replaceAll('\\', '\\\\').replaceAll('"', '\\"')
+  assert.ok(commands[0].args[1].includes(`do script "${doScript}"`))
 
   const ghosttyRes = mockRes()
   await routes.get('/api/file-actions/run')(mockReq('POST', JSON.stringify({ app: 'ghostty', path: file })), ghosttyRes)

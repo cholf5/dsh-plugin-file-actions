@@ -27,8 +27,8 @@
 
 与官方 `open-in-app` 机制对齐 —— **官方解析器 + 本机探测过滤**，零配置：
 
-- Host 半边直接加载官方 `@deepseek-ai/dsh-host-open-in-app` 包的解析库，用与官方完全相同的定位链在本机解析每个应用，再以文件路径为参数启动解析到的可执行文件（macOS `open -a <bundle> <文件>`，Windows/Linux 直接 spawn 解析到的 exe）。官方 catalog 新增应用或调整定位拼写时，插件随依赖升级自动跟进。
-- 浏览器半边读取官方探测结果（`GET /open-in-app/apps`），只显示交集：官方在本机验证过 **且** 插件白名单内的应用才会出现。新装应用在下次 `dsh web` 重启后出现，卸载后立即消失。
+- Host 半边直接加载官方 `@deepseek-ai/dsh-host-open-in-app` 包的解析库（精确锁版本），用与官方完全相同的定位链在本机解析每个应用，再以文件路径为参数启动解析到的可执行文件（macOS `open -a <bundle> <文件>`，Windows/Linux 直接 spawn 解析到的 exe）。官方 catalog 新增应用或调整定位拼写时，随插件发版升级。
+- 浏览器半边把官方探测结果（`GET /open-in-app/apps`）与插件 info 路由返回的**本机解析结果**（`available` 字段）做交集：只有官方验证过 **且** 插件自己解析成功 **且** 在白名单内的应用才会出现 —— 即使插件随附的解析库与宿主 dsh 的版本有差异，也不可能再现「菜单里有、点了 400」。新装应用在下次 `dsh web` 重启后出现，卸载后立即消失。
 - 图标来自官方图标路由（`GET /open-in-app/icon/<id>`），与会话右上角同一份真实应用图标（Windows 上从可执行文件提取）；缺失时退回通用占位图形。
 
 终端项有悬停二级菜单：**在终端运行该文件**（命令来自下文的扩展名映射，映射不到的扩展名会置灰）与**在终端打开所在目录**（转发给官方 `POST /open-in-app/open` 路由，传父目录）。
@@ -44,6 +44,9 @@
 
 ```sh
 # 本地目录安装（link: —— 源码改动直接生效）
+# ⚠️ link: 安装前先在 checkout 里跑一次 npm install：
+#    插件依赖从 checkout 自己的 node_modules 解析，缺了它们 dsh web 会启动报错
+npm install    # 在 checkout 里执行（npm / git 安装可跳过，pnpm 会自带依赖）
 npx @deepseek-ai/dsh plugin --profile web add link:/absolute/path/to/dsh-plugin-file-actions -w
 
 # 从 GitHub 安装
@@ -102,8 +105,8 @@ npx @deepseek-ai/dsh plugin --profile web update dsh-plugin-file-actions -w    #
 | `ERR_PNPM_ADDING_TO_ROOT` | 丢了 `-w` 标志 |
 | 装了但界面没变化 | 重启 `dsh web`（bundle 层不热加载），再刷新页面 |
 | 扩展菜单一直不出现在卡片上 | fiber 探测失败，插件已回退到官方 chevron（见已知限制）；先看 DevTools Console 有无报错 |
-| `dsh web` 启动日志报 `file-actions: cannot load the official open-in-app resolver` | 官方依赖未随插件正确安装 —— `dsh plugin --profile web update dsh-plugin-file-actions -w` 重装；若仍失败，按已知限制核对 `@deepseek-ai/dsh-host-open-in-app` 版本 |
-| 菜单里没有某个编辑器/终端 | 该应用未被官方探测解析到（检查官方 split 按钮菜单里有没有它）—— 插件只显示官方交集 |
+| `dsh web` 启动日志报 `file-actions:` 开头的错误，或 `Cannot find package '@deepseek-ai/dsh-host-open-in-app'` | 官方依赖没装或解析不到 —— `link:` 安装先在 checkout 里 `npm install`；npm/git 安装用 `dsh plugin --profile web update dsh-plugin-file-actions -w` 重装 |
+| 菜单里没有某个编辑器/终端 | 该应用未被「官方探测 + 插件解析」双重验证（检查官方 split 按钮菜单里有没有它）—— 两个交集都通过才会出现 |
 
 ## ⚙️ 配置
 
@@ -151,7 +154,7 @@ Cordis 行 `file-actions` 在共享的已认证 `/api` 通道上注册三个精�
 | Terminal.app | macOS | AppleScript `do script "cd <目录> && <命令>"` |
 | Ghostty | macOS / Linux | macOS `open -na Ghostty --args -e`；Linux `ghostty --working-directory=<目录> -e bash -c` |
 | Windows Terminal | Windows | `wt -d <目录> cmd /k`，命令行经环境变量 `%FILE_ACTIONS_RUN_CMD%` 传入 —— token 无空白，不受 wt 命令行重排影响，cmd 执行时才展开 |
-| Git Bash | Windows | `<Git>/usr/bin/mintty.exe -e <Git>/usr/bin/bash.exe -c "cd <目录> && <命令>; exec bash -l -i"`（`CHERE_INVOKING=1` 防止登录 shell 跳回 HOME） |
+| Git Bash | Windows | `<Git>/usr/bin/mintty.exe -e <Git>/usr/bin/bash.exe -l -c "cd <目录> && <命令>; exec '<Git>/usr/bin/bash.exe' -l -i"`（shell 一律走绝对路径 —— 裸 `exec bash` 会经 Windows PATH 命中 WSL 的 `system32\bash.exe`；`CHERE_INVOKING=1` 防止登录 shell 跳回 HOME） |
 | GNOME Terminal / Konsole | Linux | `--working-directory` / `--workdir` + `bash -c "<命令>; exec bash -i"` |
 
 POSIX 终端在命令结束后保留交互 shell（对齐 Terminal.app 行为）；每条路由先请求 composition 的 `connection` 服务做拒绝判定 —— 与官方 open-in-app 相同的信任围栏。
@@ -166,9 +169,9 @@ MutationObserver 监视交付文件卡片（`[data-presented-file]`），读取�
 ## 🚧 已知限制
 
 - **应用目录表固定**，对齐官方 open-in-app 哲学：部署方无法从 cordis.yml 添加自己的编辑器；扩展表意味着同时扩展 Host 的 `EDITOR_IDS`/`TERMINALS` 与客户端字典。哪些应用出现完全由官方探测决定（例如官方 catalog 未给 Zed 声明 win32 定位，Windows 上就不会出现 Zed）。
-- **运行命令按扩展名识别。** 扩展名未映射但带可执行位的文件会被置灰（客户端看不到可执行位）；Windows 上「可执行位」依据扩展名推导（`.exe`/`.bat`/`.cmd` 等）。需要时配置 `runCommands`。
+- **运行命令按扩展名识别。** 扩展名未映射的文件按可执行性提供「运行」：POSIX 看可执行位（客户端看不到它），Windows 按扩展名推导（`.exe`/`.bat`/`.cmd`/`.com`，chmod 在 Windows 上无效果；`.bat`/`.cmd` 默认已映射到 `cmd /c`）。无扩展名文件在 Windows 上不提供「运行」。需要时配置 `runCommands`。
 - **Windows Terminal 的运行命令经 cmd 解释。** 命令字符串由 `cmd /k` 执行，配置值里的 cmd 元字符会被展开；`.sh` 等脚本建议在 Git Bash 终端里运行（其命令在 MSYS bash 上下文中执行）。Git Bash 的「运行」依赖完整 Git for Windows 安装自带的 mintty。
-- **官方依赖的内部模块布局。** Host 通过包清单定位 `@deepseek-ai/dsh-host-open-in-app` 的 `lib/types/resolver.js`（已发布 tarball 内含，并按版本尝试多种布局）；若未来版本改动布局，插件在启动时以明确错误失败，不会静默退化。
+- **官方依赖精确锁版本。** Host 通过包清单定位 `@deepseek-ai/dsh-host-open-in-app` 的 `lib/types/resolver.js`（已发布 tarball 内含，并按版本尝试多种布局），依赖精确锁定在 `0.1.6-alpha.2`、不随 `dsh plugin update` 漂移；宿主 dsh 自带另一份解析库，两份可能的差异由客户端的双交集（官方探测 ∩ 插件解析）兜底。若未来版本改动布局，插件在启动时以 `file-actions:` 开头的明确错误失败，不会静默退化。
 - **增强读取 React fiber。** dsh 升级若改变了交付卡片内部结构，菜单可能不再出现（官方 chevron 自动恢复）；更新 fiber 探测与选择器即可恢复。
 
 ## 🛠️ 开发
@@ -181,7 +184,7 @@ node --test test/host.test.mjs test/client.test.mjs
 测试通过 seam 注入（resolver / launcher / runCommand / platform），在任意开发机上确定性覆盖 win32 / linux / darwin 三套适配器，另有一条真实加载官方解析库的集成测试。
 
 > [!TIP]
-> 通过 `link:` 安装时，改动 `lib/client.js` 会热替换进运行中的 `dsh web`，无需重启；Host 半边的改动需要重启。
+> 通过 `link:` 安装时，改动 `lib/client.js` 会热替换进运行中的 `dsh web`，无需重启；Host 半边的改动需要重启 —— 且 checkout 必须先 `npm install`（依赖从 checkout 的 `node_modules` 解析）。
 
 ## 📄 许可
 
