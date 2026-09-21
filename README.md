@@ -2,96 +2,75 @@
 
 # dsh-plugin-file-actions
 
-**Copy paths, open files in your editor, run them in a terminal — right from
-every presented-file card in the DSH web GUI.**
+**在 DSH Web 界面的每张交付文件卡片上：复制路径、用编辑器打开、在终端里运行。**
 
-[English](README.md) · 简体中文
+简体中文 · [English](README.en-US.md)
 
 [![License: MIT](https://img.shields.io/github/license/cholf5/dsh-plugin-file-actions?style=flat-square)](./LICENSE)
-[![Platform: macOS](https://img.shields.io/badge/platform-macOS-black?logo=apple&logoColor=white&style=flat-square)](#-known-limitations)
+[![Platform: macOS](https://img.shields.io/badge/platform-macOS-black?logo=apple&logoColor=white&style=flat-square)](#-已知限制)
 [![DeepSeek Harness plugin](https://img.shields.io/badge/DeepSeek_Harness-web_plugin-blueviolet?style=flat-square)](https://github.com/deepseek-ai/deepseek-harness)
 
 </div>
 
-## ✨ Features
+## ✨ 功能
 
-A dual-face DeepSeek Harness plugin that extends the dropdown menu of every
-**presented-file card** (the file list a session delivers at the end of a turn)
-in the DSH web GUI:
+一个双面 DeepSeek Harness 插件，扩展 Web 界面里**交付文件卡片**（会话收尾列出的文件列表）的下拉菜单：
 
-- 📋 **Copy relative path** / **Copy absolute path** — one click each.
-- 🚀 **Open the file in a detected editor or IDE** — VS Code, Sublime Text,
-  Rider, Cursor, Zed, the JetBrains family, and more, each shown with its real
-  application icon.
-- ▶️ **Run this file in a terminal** / **Open its containing folder in a
-  terminal** — a submenu per detected terminal (Ghostty, Terminal.app).
+- 📋 **复制相对路径** / **复制绝对路径** —— 一次点击。
+- 🚀 **用探测到的编辑器/IDE 打开该文件** —— VS Code、Sublime Text、Rider、Cursor、Zed、JetBrains 全家桶等，每项带真实应用图标。
+- ▶️ **在终端运行该文件** / **在终端打开所在目录** —— 每个探测到的终端（Ghostty、终端.app）一个二级菜单。
 
 > [!NOTE]
-> The two official menu entries (open with the default application, show in the
-> file manager) keep working unchanged.
+> 官方的两项（用默认应用打开、在 Finder 中显示）保持不变。
 
-## 🧩 How the application list is decided
+## 🧩 应用列表如何决定
 
-The plugin aligns with the official `open-in-app` mechanism — a **fixed catalog
-probed against the local machine**, no configuration:
+与官方 `open-in-app` 机制对齐 —— **固定目录表 + 本机探测过滤**，零配置：
 
-- The plugin keeps a file-level launcher table keyed by the official
-  `open-in-app` catalog ids (macOS bundle spellings mirror the official
-  catalog).
-- The browser half fetches the official probe result
-  (`GET /open-in-app/apps`) and shows only the intersection: an application
-  appears when the official host verified it on this machine **and** the plugin
-  knows how to hand it a file. Installing an application makes it appear after
-  the next `dsh web` restart, uninstalling makes it disappear immediately.
-- Icons come from the official icon route (`GET /open-in-app/icon/<id>`), the
-  same real bundle icons the session header uses; a missing icon falls back to
-  a generic glyph.
+- 插件维护一张以官方 catalog id 为键的文件级启动器表（macOS bundle 拼写与官方 catalog 一致）。
+- 浏览器半边读取官方探测结果（`GET /open-in-app/apps`），只显示交集：官方在本机验证过 **且** 插件知道如何交付文件的应用才会出现。新装应用在下次 `dsh web` 重启后出现，卸载后立即消失。
+- 图标来自官方图标路由（`GET /open-in-app/icon/<id>`），与会话右上角同一份真实 bundle 图标；缺失时退回通用占位图形。
 
-Terminals get a hover submenu with two entries: **Run this file** (the command
-comes from the extension map below; unmapped extensions are greyed out) and
-**Open containing folder** (delegates to the official
-`POST /open-in-app/open` route with the parent directory).
+终端项有悬停二级菜单：**在终端运行该文件**（命令来自下文的扩展名映射，映射不到的扩展名会置灰）与**在终端打开所在目录**（转发给官方 `POST /open-in-app/open` 路由，传父目录）。
 
-## 📦 Installation
+## 📦 安装
 
-### Prerequisites
+### 前置条件
 
-- **dsh** reachable — `dsh --version`, or use `npx @deepseek-ai/dsh` everywhere below
-- **pnpm** on PATH (the dsh plugin manager calls it): `npm install -g pnpm`
+- **dsh** 可用 —— `dsh --version`，或下面所有命令前缀 `npx @deepseek-ai/dsh`
+- PATH 中有 **pnpm**（dsh 插件管理器会调用它）：`npm install -g pnpm`
 
-### 1. Add the plugin
+### 1. 添加插件
 
 ```sh
-# local checkout (link: — source edits apply directly)
+# 本地目录安装（link: —— 源码改动直接生效）
 npx @deepseek-ai/dsh plugin --profile web add link:/absolute/path/to/dsh-plugin-file-actions -w
 
-# from GitHub
+# 从 GitHub 安装
 npx @deepseek-ai/dsh plugin --profile web add git+https://github.com/cholf5/dsh-plugin-file-actions.git -w
 ```
 
-### 2. Restart and refresh
+### 2. 重启并刷新
 
-Restart `dsh web`, then refresh the browser page (hard refresh after updates).
+重启 `dsh web`，然后刷新浏览器页面（更新后硬刷新）。
 
-### 3. Verify (optional, but recommended)
+### 3. 验证（可选，但推荐）
 
-Verify the routes are live with a cookie — an unauthenticated 401 happens for
-every `/api` path, so it proves nothing about registration:
+验证路由已注册要用 cookie —— 未认证的 401 对所有 `/api` 路径都会发生，不构成注册证据：
 
 ```sh
-curl -s -c /tmp/dsh-cookies.txt "http://127.0.0.1:3080/?token=<token-from-launch-url>" -o /dev/null   # mint session cookie (303)
-curl -s -b /tmp/dsh-cookies.txt http://127.0.0.1:3080/api/file-actions/info   # JSON body = registered; 404 "not found" = not
+curl -s -c /tmp/dsh-cookies.txt "http://127.0.0.1:3080/?token=<启动 URL 里的 token>" -o /dev/null   # 铸造会话 cookie（303）
+curl -s -b /tmp/dsh-cookies.txt http://127.0.0.1:3080/api/file-actions/info   # 返回 JSON = 已注册；404 "not found" = 未注册
 ```
 
 <details>
-<summary>No pnpm, and don't want it? Manual fallback</summary>
+<summary>没有 pnpm 也不想装？手动回退</summary>
 
 ```sh
 git clone https://github.com/cholf5/dsh-plugin-file-actions.git ~/.dsh/profiles/web/node_modules/dsh-plugin-file-actions
 ```
 
-Then edit `~/.dsh/profiles/web/cordis.patch.yml` so the top-level list contains
-(this is the file's final state — do not blindly append after a `[]` line):
+然后编辑 `~/.dsh/profiles/web/cordis.patch.yml`，使顶层列表包含（这是文件的最终状态 —— 不要盲目在 `[]` 行后追加）：
 
 ```yaml
 - insert:
@@ -99,105 +78,87 @@ Then edit `~/.dsh/profiles/web/cordis.patch.yml` so the top-level list contains
       name: dsh-plugin-file-actions
 ```
 
-The running dsh hot-loads this row (patch file watch); refresh the browser afterwards.
+运行中的 dsh 会热加载这一行（patch 文件监视）；之后刷新浏览器。
 
 </details>
 
 <details>
-<summary>Update / remove</summary>
+<summary>更新 / 卸载</summary>
 
 ```sh
-npx @deepseek-ai/dsh plugin --profile web update dsh-plugin-file-actions -w    # or remove
+npx @deepseek-ai/dsh plugin --profile web update dsh-plugin-file-actions -w    # 或 remove
 ```
 
-Restart `dsh web` afterwards.
+之后重启 `dsh web`。
 
 </details>
 
-### 🩺 Troubleshooting
+### 🩺 故障排查
 
-| Symptom | Cause & fix |
+| 症状 | 原因与修复 |
 |---|---|
-| `dsh: command not found` | npx-only install — prefix `npx @deepseek-ai/dsh` |
-| `pnpm was not found` (exit 127) | `npm install -g pnpm`, or use the manual fallback above |
-| `ERR_PNPM_ADDING_TO_ROOT` | the `-w` flag was dropped |
-| Installed but the UI is unchanged | restart `dsh web` (bundle layers don't hot-reload), then refresh the page |
-| The extended menu never appears on a card | the fiber probe failed and the plugin fell back to the official chevron (see Known Limitations); check the DevTools console for errors first |
+| `dsh: command not found` | npx-only 安装 —— 命令前缀 `npx @deepseek-ai/dsh` |
+| `pnpm was not found`（exit 127） | `npm install -g pnpm`，或用上面的手动回退 |
+| `ERR_PNPM_ADDING_TO_ROOT` | 丢了 `-w` 标志 |
+| 装了但界面没变化 | 重启 `dsh web`（bundle 层不热加载），再刷新页面 |
+| 扩展菜单一直不出现在卡片上 | fiber 探测失败，插件已回退到官方 chevron（见已知限制）；先看 DevTools Console 有无报错 |
 
-## ⚙️ Configuration
+## ⚙️ 配置
 
-The host row accepts:
+Host 行接受：
 
 ```yaml
 - insert:
     - id: file-actions
       name: dsh-plugin-file-actions
       config:
-        runCommands:            # extension (no dot) → command run before the quoted file path
+        runCommands:              # 扩展名（无点）→ 在带引号的文件路径前运行的命令
           py: python3
           sh: bash
           js: node
           ts: tsx
-        allowExecutableBit: true  # also offer "run" for unmapped extensions carrying an execute bit
-        launchTimeoutMs: 10000    # deadline per launched host command
+        allowExecutableBit: true  # 未映射扩展名但带可执行位的文件也提供「运行」
+        launchTimeoutMs: 10000    # 每条 Host 启动命令的截止时间
 ```
 
 > [!WARNING]
-> Override in the profile's own `cordis.patch.yml` — a patch row replaces the
-> target row's whole `config` (no deep merge), so restate every key.
+> 在 profile 自己的 `cordis.patch.yml` 里覆盖 —— patch 行会整行替换目标的
+> `config`（无深合并），需要把每个键都重写一遍。
 
-## 🔍 How it works
+## 🔍 工作原理
 
-| Layer | File | Runs in |
+| 层 | 文件 | 运行环境 |
 | --- | --- | --- |
-| Host | `lib/index.js` | Node — the Cordis loader |
-| Client | `lib/client.js` | Browser — the dsh client module system |
+| Host | `lib/index.js` | Node —— Cordis Loader |
+| Client | `lib/client.js` | 浏览器 —— dsh 客户端模块系统 |
 
-### Host — `lib/index.js`
+### Host —— `lib/index.js`
 
-The Cordis row `file-actions` registers three exact routes on the shared
-authenticated `/api` channel:
+Cordis 行 `file-actions` 在共享的已认证 `/api` 通道上注册三个精确路由：
 
-| Route | Behaviour |
+| 路由 | 行为 |
 | --- | --- |
-| `GET /api/file-actions/info` | registration probe — a JSON body means the plugin is loaded |
-| `POST /api/file-actions/launch` | verifies the bundle in the known application directories, then runs `open -a <bundle> <file>` |
-| `POST /api/file-actions/run` | Terminal.app via AppleScript `do script`; Ghostty via `open -na Ghostty --args -e` |
+| `GET /api/file-actions/info` | 注册探测 —— 返回 JSON body 即插件已加载 |
+| `POST /api/file-actions/launch` | 先在已知应用目录验证 bundle，再 `open -a <bundle> <文件>` |
+| `POST /api/file-actions/run` | 终端.app 走 AppleScript `do script`；Ghostty 走 `open -na Ghostty --args -e` |
 
-Every route first asks the composition's `connection` service for a rejection —
-the same trust fence as the official open-in-app host.
+每条路由先请求 composition 的 `connection` 服务做拒绝判定 —— 与官方 open-in-app 相同的信任围栏。
 
-### Client — `lib/client.js`
+### Client —— `lib/client.js`
 
-A `MutationObserver` watches presented-file cards (`[data-presented-file]`),
-reads the card's React fiber to obtain `file` / `cwd` / `onAction` / locale,
-hides the official chevron, and mounts the plugin's own menu button with the
-same styling.
+MutationObserver 监视交付文件卡片（`[data-presented-file]`），读取卡片的 React fiber 拿到 `file` / `cwd` / `onAction` / locale，隐藏官方 chevron，挂载样式一致的插件菜单按钮。
 
 > [!IMPORTANT]
-> If the fiber cannot be read (an upstream DOM or React change), the official
-> chevron stays untouched — the plugin degrades to invisible instead of
-> breaking the card.
+> 若 fiber 无法读取（上游 DOM 或 React 变更），官方 chevron 原样保留 —— 插件退化为不可见而不是弄坏卡片。
 
-## 🚧 Known Limitations
+## 🚧 已知限制
 
-- **macOS only for the native actions.** The launch/run routes use `open -a`,
-  AppleScript, and macOS bundle probing; on Linux/Windows the host routes
-  answer but the launcher table resolves nothing, so only the copy entries are
-  useful. Platform parity is deferred until needed.
-- **The catalog is fixed**, mirroring the official open-in-app philosophy:
-  deployments cannot add their own editor from cordis.yml; extending the table
-  means extending `EDITOR_BUNDLES` and the dictionaries together.
-- **Run-command discovery is extension-based.** A file with an unmapped
-  extension and an execute bit is greyed even though it could run (the client
-  cannot see the execute bit); selecting it is still impossible by design —
-  configure `runCommands` or rely on the executable-bit fallback only when the
-  extension is absent.
-- **The augmentation reads React fibers.** A dsh upgrade that changes the
-  presented-file card internals can stop the menu from appearing (official
-  chevron restored); updating the fiber probe and selectors restores it.
+- **原生动作仅限 macOS。** launch/run 路由使用 `open -a`、AppleScript 与 macOS bundle 探测；Linux/Windows 上路由可用但启动器表解析不到任何 bundle，只有复制项有用。平台补齐推迟到有真实需要时。
+- **目录表固定**，对齐官方 open-in-app 哲学：部署方无法从 cordis.yml 添加自己的编辑器；扩展表意味着同时扩展 `EDITOR_BUNDLES` 与字典。
+- **运行命令按扩展名识别。** 扩展名未映射但带可执行位的文件会被置灰（客户端看不到可执行位）；这是设计取舍 —— 需要时配置 `runCommands`，或依赖无扩展名文件的可执行位回退。
+- **增强读取 React fiber。** dsh 升级若改变了交付卡片内部结构，菜单可能不再出现（官方 chevron 自动恢复）；更新 fiber 探测与选择器即可恢复。
 
-## 🛠️ Development
+## 🛠️ 开发
 
 ```sh
 npm install
@@ -205,9 +166,8 @@ node --test test/host.test.mjs test/client.test.mjs
 ```
 
 > [!TIP]
-> With the plugin installed via `link:`, edits to `lib/client.js` hot-swap
-> into a running `dsh web` without a restart; host-half changes need a restart.
+> 通过 `link:` 安装时，改动 `lib/client.js` 会热替换进运行中的 `dsh web`，无需重启；Host 半边的改动需要重启。
 
-## 📄 License
+## 📄 许可
 
 [MIT](./LICENSE) © cholf5
