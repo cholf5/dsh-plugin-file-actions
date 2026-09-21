@@ -2,12 +2,12 @@
 
 # dsh-plugin-file-actions
 
-**在 DSH Web 界面的每张交付文件卡片上：复制路径、用编辑器打开、在终端里运行。**
+**在 DSH Web 界面的每张交付文件卡片上：复制路径、用编辑器打开、在终端里运行 —— macOS / Windows / Linux 全平台。**
 
 简体中文 · [English](README.en-US.md)
 
 [![License: MIT](https://img.shields.io/github/license/cholf5/dsh-plugin-file-actions?style=flat-square)](./LICENSE)
-[![Platform: macOS](https://img.shields.io/badge/platform-macOS-black?logo=apple&logoColor=white&style=flat-square)](#-已知限制)
+[![Platform: macOS | Windows | Linux](https://img.shields.io/badge/platform-macOS_%7C_Windows_%7C_Linux-black?style=flat-square)](#-已知限制)
 [![DeepSeek Harness plugin](https://img.shields.io/badge/DeepSeek_Harness-web_plugin-blueviolet?style=flat-square)](https://github.com/deepseek-ai/deepseek-harness)
 
 </div>
@@ -16,20 +16,20 @@
 
 一个双面 DeepSeek Harness 插件，扩展 Web 界面里**交付文件卡片**（会话收尾列出的文件列表）的下拉菜单：
 
-- 📋 **复制相对路径** / **复制绝对路径** —— 一次点击。
-- 🚀 **用探测到的编辑器/IDE 打开该文件** —— VS Code、Sublime Text、Rider、Cursor、Zed、JetBrains 全家桶等，每项带真实应用图标。
-- ▶️ **在终端运行该文件** / **在终端打开所在目录** —— 每个探测到的终端（Ghostty、终端.app）一个二级菜单。
+- 📋 **复制相对路径** / **复制绝对路径** —— 一次点击（纯浏览器侧，全平台）。
+- 🚀 **用探测到的编辑器/IDE 打开该文件** —— VS Code、Cursor、Sublime Text、JetBrains 全家桶等，每项带真实应用图标。应用探测与启动复用官方 `open-in-app` 的解析器：macOS 查 `.app` bundle，Windows 查注册表（App Paths / 卸载记录 / `%ProgramFiles%` 扫描），Linux 查 PATH 与 desktop entry。
+- ▶️ **在终端运行该文件** / **在终端打开所在目录** —— 跟随本机探测到的终端：macOS 的终端.app / Ghostty，Windows 的 Windows Terminal / Git Bash，Linux 的 GNOME Terminal / Konsole / Ghostty。
 
 > [!NOTE]
-> 官方的两项（用默认应用打开、在 Finder 中显示）保持不变。
+> 官方的两项（用默认应用打开、在文件管理器中显示）保持不变。
 
 ## 🧩 应用列表如何决定
 
-与官方 `open-in-app` 机制对齐 —— **固定目录表 + 本机探测过滤**，零配置：
+与官方 `open-in-app` 机制对齐 —— **官方解析器 + 本机探测过滤**，零配置：
 
-- 插件维护一张以官方 catalog id 为键的文件级启动器表（macOS bundle 拼写与官方 catalog 一致）。
-- 浏览器半边读取官方探测结果（`GET /open-in-app/apps`），只显示交集：官方在本机验证过 **且** 插件知道如何交付文件的应用才会出现。新装应用在下次 `dsh web` 重启后出现，卸载后立即消失。
-- 图标来自官方图标路由（`GET /open-in-app/icon/<id>`），与会话右上角同一份真实 bundle 图标；缺失时退回通用占位图形。
+- Host 半边直接加载官方 `@deepseek-ai/dsh-host-open-in-app` 包的解析库，用与官方完全相同的定位链在本机解析每个应用，再以文件路径为参数启动解析到的可执行文件（macOS `open -a <bundle> <文件>`，Windows/Linux 直接 spawn 解析到的 exe）。官方 catalog 新增应用或调整定位拼写时，插件随依赖升级自动跟进。
+- 浏览器半边读取官方探测结果（`GET /open-in-app/apps`），只显示交集：官方在本机验证过 **且** 插件白名单内的应用才会出现。新装应用在下次 `dsh web` 重启后出现，卸载后立即消失。
+- 图标来自官方图标路由（`GET /open-in-app/icon/<id>`），与会话右上角同一份真实应用图标（Windows 上从可执行文件提取）；缺失时退回通用占位图形。
 
 终端项有悬停二级菜单：**在终端运行该文件**（命令来自下文的扩展名映射，映射不到的扩展名会置灰）与**在终端打开所在目录**（转发给官方 `POST /open-in-app/open` 路由，传父目录）。
 
@@ -102,6 +102,8 @@ npx @deepseek-ai/dsh plugin --profile web update dsh-plugin-file-actions -w    #
 | `ERR_PNPM_ADDING_TO_ROOT` | 丢了 `-w` 标志 |
 | 装了但界面没变化 | 重启 `dsh web`（bundle 层不热加载），再刷新页面 |
 | 扩展菜单一直不出现在卡片上 | fiber 探测失败，插件已回退到官方 chevron（见已知限制）；先看 DevTools Console 有无报错 |
+| `dsh web` 启动日志报 `file-actions: cannot load the official open-in-app resolver` | 官方依赖未随插件正确安装 —— `dsh plugin --profile web update dsh-plugin-file-actions -w` 重装；若仍失败，按已知限制核对 `@deepseek-ai/dsh-host-open-in-app` 版本 |
+| 菜单里没有某个编辑器/终端 | 该应用未被官方探测解析到（检查官方 split 按钮菜单里有没有它）—— 插件只显示官方交集 |
 
 ## ⚙️ 配置
 
@@ -113,12 +115,12 @@ Host 行接受：
       name: dsh-plugin-file-actions
       config:
         runCommands:              # 扩展名（无点）→ 在带引号的文件路径前运行的命令
-          py: python3
+          py: python3             # 默认值随平台不同：Windows 默认 python / cmd /c / powershell -File 等
           sh: bash
           js: node
           ts: tsx
         allowExecutableBit: true  # 未映射扩展名但带可执行位的文件也提供「运行」
-        launchTimeoutMs: 10000    # 每条 Host 启动命令的截止时间
+        launchTimeoutMs: 10000    # 有界命令的截止时间，也是分离启动的观察窗口
 ```
 
 > [!WARNING]
@@ -139,10 +141,20 @@ Cordis 行 `file-actions` 在共享的已认证 `/api` 通道上注册三个精�
 | 路由 | 行为 |
 | --- | --- |
 | `GET /api/file-actions/info` | 注册探测 —— 返回 JSON body 即插件已加载 |
-| `POST /api/file-actions/launch` | 先在已知应用目录验证 bundle，再 `open -a <bundle> <文件>` |
-| `POST /api/file-actions/run` | 终端.app 走 AppleScript `do script`；Ghostty 走 `open -na Ghostty --args -e` |
+| `POST /api/file-actions/launch` | 用官方解析器解析应用 → `launchResolved` 以文件为参数启动（missing-executable 时按官方语义重解析一次） |
+| `POST /api/file-actions/run` | 按下表构建终端命令并分离启动 |
 
-每条路由先请求 composition 的 `connection` 服务做拒绝判定 —— 与官方 open-in-app 相同的信任围栏。
+终端适配（全部走官方 launcher 分离启动，凭据清洗过的环境变量，终端窗口比 dsh 活得久）：
+
+| 终端 | 平台 | 运行方式 |
+| --- | --- | --- |
+| Terminal.app | macOS | AppleScript `do script "cd <目录> && <命令>"` |
+| Ghostty | macOS / Linux | macOS `open -na Ghostty --args -e`；Linux `ghostty --working-directory=<目录> -e bash -c` |
+| Windows Terminal | Windows | `wt -d <目录> cmd /k`，命令行经环境变量 `%FILE_ACTIONS_RUN_CMD%` 传入 —— token 无空白，不受 wt 命令行重排影响，cmd 执行时才展开 |
+| Git Bash | Windows | `<Git>/usr/bin/mintty.exe -e <Git>/usr/bin/bash.exe -c "cd <目录> && <命令>; exec bash -l -i"`（`CHERE_INVOKING=1` 防止登录 shell 跳回 HOME） |
+| GNOME Terminal / Konsole | Linux | `--working-directory` / `--workdir` + `bash -c "<命令>; exec bash -i"` |
+
+POSIX 终端在命令结束后保留交互 shell（对齐 Terminal.app 行为）；每条路由先请求 composition 的 `connection` 服务做拒绝判定 —— 与官方 open-in-app 相同的信任围栏。
 
 ### Client —— `lib/client.js`
 
@@ -153,9 +165,10 @@ MutationObserver 监视交付文件卡片（`[data-presented-file]`），读取�
 
 ## 🚧 已知限制
 
-- **原生动作仅限 macOS。** launch/run 路由使用 `open -a`、AppleScript 与 macOS bundle 探测；Linux/Windows 上路由可用但启动器表解析不到任何 bundle，只有复制项有用。平台补齐推迟到有真实需要时。
-- **目录表固定**，对齐官方 open-in-app 哲学：部署方无法从 cordis.yml 添加自己的编辑器；扩展表意味着同时扩展 `EDITOR_BUNDLES` 与字典。
-- **运行命令按扩展名识别。** 扩展名未映射但带可执行位的文件会被置灰（客户端看不到可执行位）；这是设计取舍 —— 需要时配置 `runCommands`，或依赖无扩展名文件的可执行位回退。
+- **应用目录表固定**，对齐官方 open-in-app 哲学：部署方无法从 cordis.yml 添加自己的编辑器；扩展表意味着同时扩展 Host 的 `EDITOR_IDS`/`TERMINALS` 与客户端字典。哪些应用出现完全由官方探测决定（例如官方 catalog 未给 Zed 声明 win32 定位，Windows 上就不会出现 Zed）。
+- **运行命令按扩展名识别。** 扩展名未映射但带可执行位的文件会被置灰（客户端看不到可执行位）；Windows 上「可执行位」依据扩展名推导（`.exe`/`.bat`/`.cmd` 等）。需要时配置 `runCommands`。
+- **Windows Terminal 的运行命令经 cmd 解释。** 命令字符串由 `cmd /k` 执行，配置值里的 cmd 元字符会被展开；`.sh` 等脚本建议在 Git Bash 终端里运行（其命令在 MSYS bash 上下文中执行）。Git Bash 的「运行」依赖完整 Git for Windows 安装自带的 mintty。
+- **官方依赖的内部模块布局。** Host 通过包清单定位 `@deepseek-ai/dsh-host-open-in-app` 的 `lib/types/resolver.js`（已发布 tarball 内含，并按版本尝试多种布局）；若未来版本改动布局，插件在启动时以明确错误失败，不会静默退化。
 - **增强读取 React fiber。** dsh 升级若改变了交付卡片内部结构，菜单可能不再出现（官方 chevron 自动恢复）；更新 fiber 探测与选择器即可恢复。
 
 ## 🛠️ 开发
@@ -164,6 +177,8 @@ MutationObserver 监视交付文件卡片（`[data-presented-file]`），读取�
 npm install
 node --test test/host.test.mjs test/client.test.mjs
 ```
+
+测试通过 seam 注入（resolver / launcher / runCommand / platform），在任意开发机上确定性覆盖 win32 / linux / darwin 三套适配器，另有一条真实加载官方解析库的集成测试。
 
 > [!TIP]
 > 通过 `link:` 安装时，改动 `lib/client.js` 会热替换进运行中的 `dsh web`，无需重启；Host 半边的改动需要重启。

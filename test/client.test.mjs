@@ -41,3 +41,14 @@ test('bundle registers under the package id with an apply export', () => {
   assert.equal(exports.inject[0], 'locale')
   assert.equal(typeof exports.apply, 'function')
 })
+
+test('client menu carries the cross-platform terminal ids and labels', () => {
+  const source = readFileSync(join(here, '../lib/client.js'), 'utf8')
+  assert.ok(
+    source.includes("'ghostty', 'terminal', 'gitbash', 'windowsterminal', 'gnometerminal', 'konsole'"),
+    'terminal id list covers every official terminal catalog id',
+  )
+  for (const id of ['gitbash', 'windowsterminal', 'gnometerminal', 'konsole']) {
+    assert.ok(source.includes(`'app.${id}':`), `missing a locale label for ${id}`)
+  }
+})
