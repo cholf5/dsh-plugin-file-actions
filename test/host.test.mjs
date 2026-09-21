@@ -39,6 +39,13 @@ function mockRes() {
   }
 }
 
+/** The do-script string literal the implementation sends: backslashes and
+ * double quotes doubled, exactly like the AppleScript source it builds, so
+ * expectations built through this helper hold on Windows temp paths too. */
+function appleScriptLiteral(script) {
+  return script.replaceAll('\\', '\\\\').replaceAll('"', '\\"')
+}
+
 /** A seam whose resolver knows one editor plus the two Windows terminals. */
 function win32Seam(overrides = {}) {
   const launched = []
@@ -248,7 +255,8 @@ test('run (posix) executes the file itself through the execute-bit fallback', as
   const res = mockRes()
   await routes.get('/api/file-actions/run')(mockReq('POST', JSON.stringify({ app: 'terminal', path: file })), res)
   assert.equal(res.statusCode, 200)
-  assert.ok(commands[0].args[1].includes(`do script "cd '${dir}' && '${file}'"`))
+  const script = `cd '${dir}' && '${file}'`
+  assert.ok(commands[0].args[1].includes(`do script "${appleScriptLiteral(script)}"`))
 })
 
 test('run answers unavailable-terminal when the terminal never resolved', async () => {
@@ -332,11 +340,8 @@ test('run (darwin) keeps the historical Terminal.app and Ghostty spellings', asy
   await routes.get('/api/file-actions/run')(mockReq('POST', JSON.stringify({ app: 'terminal', path: file })), terminalRes)
   assert.equal(terminalRes.statusCode, 200)
   assert.equal(commands[0].command, 'osascript')
-  // The do-script literal doubles backslashes and quotes exactly like the
-  // implementation, so the assertion holds on Windows temp paths too.
   const script = `cd '${dir}' && python3 '${file}'`
-  const doScript = script.replaceAll('\\', '\\\\').replaceAll('"', '\\"')
-  assert.ok(commands[0].args[1].includes(`do script "${doScript}"`))
+  assert.ok(commands[0].args[1].includes(`do script "${appleScriptLiteral(script)}"`))
 
   const ghosttyRes = mockRes()
   await routes.get('/api/file-actions/run')(mockReq('POST', JSON.stringify({ app: 'ghostty', path: file })), ghosttyRes)
