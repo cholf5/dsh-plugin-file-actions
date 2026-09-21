@@ -36,6 +36,52 @@ npx @deepseek-ai/dsh plugin --profile web add git+https://github.com/cholf5/dsh-
 ```
 
 重启 `dsh web`，然后刷新浏览器页面（更新后硬刷新）。
+验证路由已注册要用 cookie —— 未认证的 401 对所有 `/api` 路径都会发生，不构成注册证据：
+
+```sh
+curl -s -c /tmp/dsh-cookies.txt "http://127.0.0.1:3080/?token=<启动 URL 里的 token>" -o /dev/null   # 铸造会话 cookie（303）
+curl -s -b /tmp/dsh-cookies.txt http://127.0.0.1:3080/api/file-actions/info   # 返回 JSON = 已注册；404 "not found" = 未注册
+```
+
+<details>
+<summary>没有 pnpm 也不想装？手动回退</summary>
+
+```sh
+git clone https://github.com/cholf5/dsh-plugin-file-actions.git ~/.dsh/profiles/web/node_modules/dsh-plugin-file-actions
+```
+
+然后编辑 `~/.dsh/profiles/web/cordis.patch.yml`，使顶层列表包含（这是文件的最终状态 —— 不要盲目在 `[]` 行后追加）：
+
+```yaml
+- insert:
+    - id: file-actions
+      name: dsh-plugin-file-actions
+```
+
+运行中的 dsh 会热加载这一行（patch 文件监视）；之后刷新浏览器。
+
+</details>
+
+<details>
+<summary>更新 / 卸载</summary>
+
+```sh
+npx @deepseek-ai/dsh plugin --profile web update dsh-plugin-file-actions -w    # 或 remove
+```
+
+之后重启 `dsh web`。
+
+</details>
+
+### 故障排查
+
+| 症状 | 原因与修复 |
+|---|---|
+| `dsh: command not found` | npx-only 安装 —— 命令前缀 `npx @deepseek-ai/dsh` |
+| `pnpm was not found`（exit 127） | `npm install -g pnpm`，或用上面的手动回退 |
+| `ERR_PNPM_ADDING_TO_ROOT` | 丢了 `-w` 标志 |
+| 装了但界面没变化 | 重启 `dsh web`（bundle 层不热加载），再刷新页面 |
+| 扩展菜单一直不出现在卡片上 | fiber 探测失败，插件已回退到官方 chevron（见已知限制）；先看 DevTools Console 有无报错 |
 
 ## 配置
 

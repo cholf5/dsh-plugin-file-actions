@@ -54,6 +54,54 @@ npx @deepseek-ai/dsh plugin --profile web add git+https://github.com/cholf5/dsh-
 ```
 
 Restart `dsh web`, then refresh the browser page (hard refresh after updates).
+Verify the routes are live with a cookie — an unauthenticated 401 happens for
+every `/api` path, so it proves nothing about registration:
+
+```sh
+curl -s -c /tmp/dsh-cookies.txt "http://127.0.0.1:3080/?token=<token-from-launch-url>" -o /dev/null   # mint session cookie (303)
+curl -s -b /tmp/dsh-cookies.txt http://127.0.0.1:3080/api/file-actions/info   # JSON body = registered; 404 "not found" = not
+```
+
+<details>
+<summary>No pnpm, and don't want it? Manual fallback</summary>
+
+```sh
+git clone https://github.com/cholf5/dsh-plugin-file-actions.git ~/.dsh/profiles/web/node_modules/dsh-plugin-file-actions
+```
+
+Then edit `~/.dsh/profiles/web/cordis.patch.yml` so the top-level list contains
+(this is the file's final state — do not blindly append after a `[]` line):
+
+```yaml
+- insert:
+    - id: file-actions
+      name: dsh-plugin-file-actions
+```
+
+The running dsh hot-loads this row (patch file watch); refresh the browser afterwards.
+
+</details>
+
+<details>
+<summary>Update / remove</summary>
+
+```sh
+npx @deepseek-ai/dsh plugin --profile web update dsh-plugin-file-actions -w    # or remove
+```
+
+Restart `dsh web` afterwards.
+
+</details>
+
+### Troubleshooting
+
+| Symptom | Cause & fix |
+|---|---|
+| `dsh: command not found` | npx-only install — prefix `npx @deepseek-ai/dsh` |
+| `pnpm was not found` (exit 127) | `npm install -g pnpm`, or use the manual fallback above |
+| `ERR_PNPM_ADDING_TO_ROOT` | the `-w` flag was dropped |
+| Installed but the UI is unchanged | restart `dsh web` (bundle layers don't hot-reload), then refresh the page |
+| The extended menu never appears on a card | the fiber probe failed and the plugin fell back to the official chevron (see Known Limitations); check the DevTools console for errors first |
 
 ## Configuration
 
