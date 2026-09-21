@@ -1,16 +1,29 @@
+<div align="center">
+
 # dsh-plugin-file-actions
 
-[English](README.md) | 简体中文
+**在 DSH Web 界面的每张交付文件卡片上：复制路径、用编辑器打开、在终端里运行。**
+
+English · [简体中文](README.zh-CN.md)
+
+[![License: MIT](https://img.shields.io/github/license/cholf5/dsh-plugin-file-actions?style=flat-square)](./LICENSE)
+[![Platform: macOS](https://img.shields.io/badge/platform-macOS-black?logo=apple&logoColor=white&style=flat-square)](#-已知限制)
+[![DeepSeek Harness plugin](https://img.shields.io/badge/DeepSeek_Harness-web_plugin-blueviolet?style=flat-square)](https://github.com/deepseek-ai/deepseek-harness)
+
+</div>
+
+## ✨ 功能
 
 一个双面 DeepSeek Harness 插件，扩展 Web 界面里**交付文件卡片**（会话收尾列出的文件列表）的下拉菜单：
 
-- **复制相对路径** / **复制绝对路径**；
-- **用探测到的编辑器/IDE 打开该文件** —— VS Code、Sublime Text、Rider、Cursor、Zed、JetBrains 全家桶等，每项带真实应用图标；
-- **在终端运行该文件** / **在终端打开所在目录** —— 每个探测到的终端（Ghostty、终端.app）一个二级菜单。
+- 📋 **复制相对路径** / **复制绝对路径** —— 一次点击。
+- 🚀 **用探测到的编辑器/IDE 打开该文件** —— VS Code、Sublime Text、Rider、Cursor、Zed、JetBrains 全家桶等，每项带真实应用图标。
+- ▶️ **在终端运行该文件** / **在终端打开所在目录** —— 每个探测到的终端（Ghostty、终端.app）一个二级菜单。
 
-官方的两项（用默认应用打开、在 Finder 中显示）保持不变。
+> [!NOTE]
+> 官方的两项（用默认应用打开、在 Finder 中显示）保持不变。
 
-## 应用列表如何决定
+## 🧩 应用列表如何决定
 
 与官方 `open-in-app` 机制对齐 —— **固定目录表 + 本机探测过滤**，零配置：
 
@@ -20,12 +33,14 @@
 
 终端项有悬停二级菜单：**在终端运行该文件**（命令来自下文的扩展名映射，映射不到的扩展名会置灰）与**在终端打开所在目录**（转发给官方 `POST /open-in-app/open` 路由，传父目录）。
 
-## 安装
+## 📦 安装
 
-前置条件：
+### 前置条件
 
 - **dsh** 可用 —— `dsh --version`，或下面所有命令前缀 `npx @deepseek-ai/dsh`
 - PATH 中有 **pnpm**（dsh 插件管理器会调用它）：`npm install -g pnpm`
+
+### 1. 添加插件
 
 ```sh
 # 本地目录安装（link: —— 源码改动直接生效）
@@ -35,7 +50,12 @@ npx @deepseek-ai/dsh plugin --profile web add link:/absolute/path/to/dsh-plugin-
 npx @deepseek-ai/dsh plugin --profile web add git+https://github.com/cholf5/dsh-plugin-file-actions.git -w
 ```
 
+### 2. 重启并刷新
+
 重启 `dsh web`，然后刷新浏览器页面（更新后硬刷新）。
+
+### 3. 验证（可选，但推荐）
+
 验证路由已注册要用 cookie —— 未认证的 401 对所有 `/api` 路径都会发生，不构成注册证据：
 
 ```sh
@@ -73,7 +93,7 @@ npx @deepseek-ai/dsh plugin --profile web update dsh-plugin-file-actions -w    #
 
 </details>
 
-### 故障排查
+### 🩺 故障排查
 
 | 症状 | 原因与修复 |
 |---|---|
@@ -83,7 +103,7 @@ npx @deepseek-ai/dsh plugin --profile web update dsh-plugin-file-actions -w    #
 | 装了但界面没变化 | 重启 `dsh web`（bundle 层不热加载），再刷新页面 |
 | 扩展菜单一直不出现在卡片上 | fiber 探测失败，插件已回退到官方 chevron（见已知限制）；先看 DevTools Console 有无报错 |
 
-## 配置
+## ⚙️ 配置
 
 Host 行接受：
 
@@ -101,29 +121,53 @@ Host 行接受：
         launchTimeoutMs: 10000    # 每条 Host 启动命令的截止时间
 ```
 
-在 profile 自己的 `cordis.patch.yml` 里覆盖 —— 注意 patch 行会整行替换目标的 `config`（无深合并），需要把每个键都重写一遍。
+> [!WARNING]
+> 在 profile 自己的 `cordis.patch.yml` 里覆盖 —— patch 行会整行替换目标的
+> `config`（无深合并），需要把每个键都重写一遍。
 
-## 工作原理
+## 🔍 工作原理
 
-| 层 | 文件 | 职责 |
+| 层 | 文件 | 运行环境 |
 | --- | --- | --- |
-| Host | `lib/index.js` | Cordis 行 `file-actions`；注册 `GET /api/file-actions/info`、`POST /api/file-actions/launch`（先在已知应用目录验证 bundle，再 `open -a <bundle> <文件>`）、`POST /api/file-actions/run`（终端.app 走 AppleScript `do script`，Ghostty 走 `open -na Ghostty --args -e`）。每条路由先请求 composition 的 `connection` 服务做拒绝判定 —— 与官方 open-in-app 相同的信任围栏。 |
-| Client | `lib/client.js` | MutationObserver 监视交付文件卡片（`[data-presented-file]`），读取卡片的 React fiber 拿到 `file` / `cwd` / `onAction` / locale，隐藏官方 chevron，挂载样式一致的插件菜单按钮。若 fiber 无法读取（上游 DOM 或 React 变更），官方 chevron 原样保留 —— 插件退化为不可见而不是弄坏卡片。 |
+| Host | `lib/index.js` | Node —— Cordis Loader |
+| Client | `lib/client.js` | 浏览器 —— dsh 客户端模块系统 |
 
-## 已知限制
+### Host —— `lib/index.js`
+
+Cordis 行 `file-actions` 在共享的已认证 `/api` 通道上注册三个精确路由：
+
+| 路由 | 行为 |
+| --- | --- |
+| `GET /api/file-actions/info` | 注册探测 —— 返回 JSON body 即插件已加载 |
+| `POST /api/file-actions/launch` | 先在已知应用目录验证 bundle，再 `open -a <bundle> <文件>` |
+| `POST /api/file-actions/run` | 终端.app 走 AppleScript `do script`；Ghostty 走 `open -na Ghostty --args -e` |
+
+每条路由先请求 composition 的 `connection` 服务做拒绝判定 —— 与官方 open-in-app 相同的信任围栏。
+
+### Client —— `lib/client.js`
+
+MutationObserver 监视交付文件卡片（`[data-presented-file]`），读取卡片的 React fiber 拿到 `file` / `cwd` / `onAction` / locale，隐藏官方 chevron，挂载样式一致的插件菜单按钮。
+
+> [!IMPORTANT]
+> 若 fiber 无法读取（上游 DOM 或 React 变更），官方 chevron 原样保留 —— 插件退化为不可见而不是弄坏卡片。
+
+## 🚧 已知限制
 
 - **原生动作仅限 macOS。** launch/run 路由使用 `open -a`、AppleScript 与 macOS bundle 探测；Linux/Windows 上路由可用但启动器表解析不到任何 bundle，只有复制项有用。平台补齐推迟到有真实需要时。
 - **目录表固定**，对齐官方 open-in-app 哲学：部署方无法从 cordis.yml 添加自己的编辑器；扩展表意味着同时扩展 `EDITOR_BUNDLES` 与字典。
 - **运行命令按扩展名识别。** 扩展名未映射但带可执行位的文件会被置灰（客户端看不到可执行位）；这是设计取舍 —— 需要时配置 `runCommands`，或依赖无扩展名文件的可执行位回退。
 - **增强读取 React fiber。** dsh 升级若改变了交付卡片内部结构，菜单可能不再出现（官方 chevron 自动恢复）；更新 fiber 探测与选择器即可恢复。
 
-## 开发
+## 🛠️ 开发
 
 ```sh
 npm install
 node --test test/host.test.mjs test/client.test.mjs
 ```
 
-## 许可
+> [!TIP]
+> 通过 `link:` 安装时，改动 `lib/client.js` 会热替换进运行中的 `dsh web`，无需重启；Host 半边的改动需要重启。
 
-[MIT](./LICENSE)
+## 📄 许可
+
+[MIT](./LICENSE) © cholf5

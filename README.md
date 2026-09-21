@@ -1,22 +1,36 @@
+<div align="center">
+
 # dsh-plugin-file-actions
 
-[English](README.md) | [简体中文](README.zh-CN.md)
+**Copy paths, open files in your editor, run them in a terminal — right from
+every presented-file card in the DSH web GUI.**
+
+[English](README.md) · 简体中文
+
+[![License: MIT](https://img.shields.io/github/license/cholf5/dsh-plugin-file-actions?style=flat-square)](./LICENSE)
+[![Platform: macOS](https://img.shields.io/badge/platform-macOS-black?logo=apple&logoColor=white&style=flat-square)](#-known-limitations)
+[![DeepSeek Harness plugin](https://img.shields.io/badge/DeepSeek_Harness-web_plugin-blueviolet?style=flat-square)](https://github.com/deepseek-ai/deepseek-harness)
+
+</div>
+
+## ✨ Features
 
 A dual-face DeepSeek Harness plugin that extends the dropdown menu of every
 **presented-file card** (the file list a session delivers at the end of a turn)
 in the DSH web GUI:
 
-- **Copy relative path** / **Copy absolute path** — one click each.
-- **Open the file in a detected editor or IDE** — VS Code, Sublime Text, Rider,
-  Cursor, Zed, the JetBrains family, and more, each shown with its real
+- 📋 **Copy relative path** / **Copy absolute path** — one click each.
+- 🚀 **Open the file in a detected editor or IDE** — VS Code, Sublime Text,
+  Rider, Cursor, Zed, the JetBrains family, and more, each shown with its real
   application icon.
-- **Run this file in a terminal** / **Open its containing folder in a terminal**
-  — a submenu per detected terminal (Ghostty, Terminal.app).
+- ▶️ **Run this file in a terminal** / **Open its containing folder in a
+  terminal** — a submenu per detected terminal (Ghostty, Terminal.app).
 
-The two official menu entries (open with the default application, show in the
-file manager) keep working unchanged.
+> [!NOTE]
+> The two official menu entries (open with the default application, show in the
+> file manager) keep working unchanged.
 
-## How the application list is decided
+## 🧩 How the application list is decided
 
 The plugin aligns with the official `open-in-app` mechanism — a **fixed catalog
 probed against the local machine**, no configuration:
@@ -38,12 +52,14 @@ comes from the extension map below; unmapped extensions are greyed out) and
 **Open containing folder** (delegates to the official
 `POST /open-in-app/open` route with the parent directory).
 
-## Installation
+## 📦 Installation
 
-Prerequisites:
+### Prerequisites
 
 - **dsh** reachable — `dsh --version`, or use `npx @deepseek-ai/dsh` everywhere below
 - **pnpm** on PATH (the dsh plugin manager calls it): `npm install -g pnpm`
+
+### 1. Add the plugin
 
 ```sh
 # local checkout (link: — source edits apply directly)
@@ -53,7 +69,12 @@ npx @deepseek-ai/dsh plugin --profile web add link:/absolute/path/to/dsh-plugin-
 npx @deepseek-ai/dsh plugin --profile web add git+https://github.com/cholf5/dsh-plugin-file-actions.git -w
 ```
 
+### 2. Restart and refresh
+
 Restart `dsh web`, then refresh the browser page (hard refresh after updates).
+
+### 3. Verify (optional, but recommended)
+
 Verify the routes are live with a cookie — an unauthenticated 401 happens for
 every `/api` path, so it proves nothing about registration:
 
@@ -93,7 +114,7 @@ Restart `dsh web` afterwards.
 
 </details>
 
-### Troubleshooting
+### 🩺 Troubleshooting
 
 | Symptom | Cause & fix |
 |---|---|
@@ -103,7 +124,7 @@ Restart `dsh web` afterwards.
 | Installed but the UI is unchanged | restart `dsh web` (bundle layers don't hot-reload), then refresh the page |
 | The extended menu never appears on a card | the fiber probe failed and the plugin fell back to the official chevron (see Known Limitations); check the DevTools console for errors first |
 
-## Configuration
+## ⚙️ Configuration
 
 The host row accepts:
 
@@ -121,17 +142,44 @@ The host row accepts:
         launchTimeoutMs: 10000    # deadline per launched host command
 ```
 
-Override in the profile's own `cordis.patch.yml` — note a patch row replaces
-the target row's whole `config` (no deep merge), so restate every key.
+> [!WARNING]
+> Override in the profile's own `cordis.patch.yml` — a patch row replaces the
+> target row's whole `config` (no deep merge), so restate every key.
 
-## How it works
+## 🔍 How it works
 
-| Layer | File | Responsibility |
+| Layer | File | Runs in |
 | --- | --- | --- |
-| Host | `lib/index.js` | Cordis row `file-actions`; registers `GET /api/file-actions/info`, `POST /api/file-actions/launch` (`open -a <bundle> <file>` after verifying the bundle in the known application directories), and `POST /api/file-actions/run` (Terminal.app via AppleScript `do script`, Ghostty via `open -na Ghostty --args -e`). Every route asks the composition's `connection` service for a rejection first — the same trust fence as the official open-in-app host. |
-| Client | `lib/client.js` | A MutationObserver watches presented-file cards (`[data-presented-file]`), reads the card's React fiber to obtain `file` / `cwd` / `onAction` / locale, hides the official chevron, and mounts the plugin's own menu button with the same styling. If the fiber cannot be read (an upstream DOM or React change), the official chevron stays untouched — the plugin degrades to invisible instead of breaking the card. |
+| Host | `lib/index.js` | Node — the Cordis loader |
+| Client | `lib/client.js` | Browser — the dsh client module system |
 
-## Known Limitations
+### Host — `lib/index.js`
+
+The Cordis row `file-actions` registers three exact routes on the shared
+authenticated `/api` channel:
+
+| Route | Behaviour |
+| --- | --- |
+| `GET /api/file-actions/info` | registration probe — a JSON body means the plugin is loaded |
+| `POST /api/file-actions/launch` | verifies the bundle in the known application directories, then runs `open -a <bundle> <file>` |
+| `POST /api/file-actions/run` | Terminal.app via AppleScript `do script`; Ghostty via `open -na Ghostty --args -e` |
+
+Every route first asks the composition's `connection` service for a rejection —
+the same trust fence as the official open-in-app host.
+
+### Client — `lib/client.js`
+
+A `MutationObserver` watches presented-file cards (`[data-presented-file]`),
+reads the card's React fiber to obtain `file` / `cwd` / `onAction` / locale,
+hides the official chevron, and mounts the plugin's own menu button with the
+same styling.
+
+> [!IMPORTANT]
+> If the fiber cannot be read (an upstream DOM or React change), the official
+> chevron stays untouched — the plugin degrades to invisible instead of
+> breaking the card.
+
+## 🚧 Known Limitations
 
 - **macOS only for the native actions.** The launch/run routes use `open -a`,
   AppleScript, and macOS bundle probing; on Linux/Windows the host routes
@@ -149,13 +197,17 @@ the target row's whole `config` (no deep merge), so restate every key.
   presented-file card internals can stop the menu from appearing (official
   chevron restored); updating the fiber probe and selectors restores it.
 
-## Development
+## 🛠️ Development
 
 ```sh
 npm install
 node --test test/host.test.mjs test/client.test.mjs
 ```
 
-## License
+> [!TIP]
+> With the plugin installed via `link:`, edits to `lib/client.js` hot-swap
+> into a running `dsh web` without a restart; host-half changes need a restart.
 
-[MIT](./LICENSE)
+## 📄 License
+
+[MIT](./LICENSE) © cholf5
