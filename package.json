@@ -1,0 +1,38 @@
+{
+  "name": "dsh-plugin-file-actions",
+  "version": "0.1.0",
+  "description": "Extends the presented-file card menu in the DSH web GUI: copy relative/absolute path, open the file in detected editors (VS Code, Sublime Text, Rider, ...), and run it in a terminal or open its directory. App visibility follows the official open-in-app probe; icons come from the official icon route.",
+  "license": "MIT",
+  "author": "cholf5 <cholf5@hotmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cholf5/dsh-plugin-file-actions.git"
+  },
+  "homepage": "https://github.com/cholf5/dsh-plugin-file-actions#readme",
+  "bugs": {
+    "url": "https://github.com/cholf5/dsh-plugin-file-actions/issues"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js"
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml"
+  ],
+  "dependencies": {
+    "@deepseek-ai/schemastery": "^3.18.2"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [],
+      "external": []
+    }
+  }
+}

@@ -1,0 +1,3 @@
+- insert:
+    - id: file-actions
+      name: dsh-plugin-file-actions

@@ -1,0 +1,113 @@
+# dsh-plugin-file-actions
+
+[English](README.md) | [简体中文](README.zh-CN.md)
+
+A dual-face DeepSeek Harness plugin that extends the dropdown menu of every
+**presented-file card** (the file list a session delivers at the end of a turn)
+in the DSH web GUI:
+
+- **Copy relative path** / **Copy absolute path** — one click each.
+- **Open the file in a detected editor or IDE** — VS Code, Sublime Text, Rider,
+  Cursor, Zed, the JetBrains family, and more, each shown with its real
+  application icon.
+- **Run this file in a terminal** / **Open its containing folder in a terminal**
+  — a submenu per detected terminal (Ghostty, Terminal.app).
+
+The two official menu entries (open with the default application, show in the
+file manager) keep working unchanged.
+
+## How the application list is decided
+
+The plugin aligns with the official `open-in-app` mechanism — a **fixed catalog
+probed against the local machine**, no configuration:
+
+- The plugin keeps a file-level launcher table keyed by the official
+  `open-in-app` catalog ids (macOS bundle spellings mirror the official
+  catalog).
+- The browser half fetches the official probe result
+  (`GET /open-in-app/apps`) and shows only the intersection: an application
+  appears when the official host verified it on this machine **and** the plugin
+  knows how to hand it a file. Installing an application makes it appear after
+  the next `dsh web` restart, uninstalling makes it disappear immediately.
+- Icons come from the official icon route (`GET /open-in-app/icon/<id>`), the
+  same real bundle icons the session header uses; a missing icon falls back to
+  a generic glyph.
+
+Terminals get a hover submenu with two entries: **Run this file** (the command
+comes from the extension map below; unmapped extensions are greyed out) and
+**Open containing folder** (delegates to the official
+`POST /open-in-app/open` route with the parent directory).
+
+## Installation
+
+Prerequisites:
+
+- **dsh** reachable — `dsh --version`, or use `npx @deepseek-ai/dsh` everywhere below
+- **pnpm** on PATH (the dsh plugin manager calls it): `npm install -g pnpm`
+
+```sh
+# local checkout (link: — source edits apply directly)
+npx @deepseek-ai/dsh plugin --profile web add link:/absolute/path/to/dsh-plugin-file-actions -w
+
+# from GitHub
+npx @deepseek-ai/dsh plugin --profile web add git+https://github.com/cholf5/dsh-plugin-file-actions.git -w
+```
+
+Restart `dsh web`, then refresh the browser page (hard refresh after updates).
+
+## Configuration
+
+The host row accepts:
+
+```yaml
+- insert:
+    - id: file-actions
+      name: dsh-plugin-file-actions
+      config:
+        runCommands:            # extension (no dot) → command run before the quoted file path
+          py: python3
+          sh: bash
+          js: node
+          ts: tsx
+        allowExecutableBit: true  # also offer "run" for unmapped extensions carrying an execute bit
+        launchTimeoutMs: 10000    # deadline per launched host command
+```
+
+Override in the profile's own `cordis.patch.yml` — note a patch row replaces
+the target row's whole `config` (no deep merge), so restate every key.
+
+## How it works
+
+| Layer | File | Responsibility |
+| --- | --- | --- |
+| Host | `lib/index.js` | Cordis row `file-actions`; registers `GET /api/file-actions/info`, `POST /api/file-actions/launch` (`open -a <bundle> <file>` after verifying the bundle in the known application directories), and `POST /api/file-actions/run` (Terminal.app via AppleScript `do script`, Ghostty via `open -na Ghostty --args -e`). Every route asks the composition's `connection` service for a rejection first — the same trust fence as the official open-in-app host. |
+| Client | `lib/client.js` | A MutationObserver watches presented-file cards (`[data-presented-file]`), reads the card's React fiber to obtain `file` / `cwd` / `onAction` / locale, hides the official chevron, and mounts the plugin's own menu button with the same styling. If the fiber cannot be read (an upstream DOM or React change), the official chevron stays untouched — the plugin degrades to invisible instead of breaking the card. |
+
+## Known Limitations
+
+- **macOS only for the native actions.** The launch/run routes use `open -a`,
+  AppleScript, and macOS bundle probing; on Linux/Windows the host routes
+  answer but the launcher table resolves nothing, so only the copy entries are
+  useful. Platform parity is deferred until needed.
+- **The catalog is fixed**, mirroring the official open-in-app philosophy:
+  deployments cannot add their own editor from cordis.yml; extending the table
+  means extending `EDITOR_BUNDLES` and the dictionaries together.
+- **Run-command discovery is extension-based.** A file with an unmapped
+  extension and an execute bit is greyed even though it could run (the client
+  cannot see the execute bit); selecting it is still impossible by design —
+  configure `runCommands` or rely on the executable-bit fallback only when the
+  extension is absent.
+- **The augmentation reads React fibers.** A dsh upgrade that changes the
+  presented-file card internals can stop the menu from appearing (official
+  chevron restored); updating the fiber probe and selectors restores it.
+
+## Development
+
+```sh
+npm install
+node --test test/host.test.mjs test/client.test.mjs
+```
+
+## License
+
+[MIT](./LICENSE)
