@@ -179,6 +179,13 @@ test('the menu opens above the trigger with the official anchor alignment', asyn
   assert.equal(menu.portal, true, 'keeps the official portaled placement')
 })
 
+test('the container is a flex box so the chevron stays vertically centered', async () => {
+  const { fake } = await runTakeover({ wrappedChevron: true })
+  const container = fake.card.querySelector('[data-fa-host]')
+  assert.equal(container.style.display, 'flex',
+    'a block container drops the inline-flex Menu root span onto the text baseline at content height; flex stretches it like the official menuAnchor did')
+})
+
 test('copy-relative strips the workspace root off absolute presented paths', async () => {
   const { menus, clipboard } = await runTakeover({
     wrappedChevron: true,
