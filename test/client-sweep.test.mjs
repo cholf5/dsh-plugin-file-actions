@@ -71,7 +71,7 @@ function matches(element, selector) {
   throw new Error(`fake DOM does not implement selector: ${selector}`)
 }
 
-function makeEnvironment({ wrappedChevron }) {
+function makeEnvironment({ wrappedChevron, filePath = 'src/app.py', cwd }) {
   const documentElement = makeElement('html')
   const card = makeElement('div', { 'data-presented-file': true }, documentElement)
   const split = makeElement('div', { className: 'nyYjTG_split' }, card)
@@ -84,14 +84,16 @@ function makeEnvironment({ wrappedChevron }) {
     split.children.splice(split.children.indexOf(chevron), 1)
   }
   card['__reactFiber$test'] = {
-    memoizedProps: { file: { path: 'src/app.py' }, onAction: () => {}, t: (key) => key },
+    memoizedProps: { file: { path: filePath }, cwd, onAction: () => {}, t: (key) => key },
     return: null,
   }
   return { documentElement, card, split, openButton, chevron, wrapper }
 }
 
-async function runTakeover({ wrappedChevron }) {
-  const fake = makeEnvironment({ wrappedChevron })
+async function runTakeover({ wrappedChevron, filePath, cwd } = {}) {
+  const fake = makeEnvironment({ wrappedChevron, filePath, cwd })
+  const menus = []
+  const clipboard = []
   let registered
   const sandbox = {
     document: {
@@ -108,11 +110,25 @@ async function runTakeover({ wrappedChevron }) {
     fetch: async () => ({ ok: false, status: 0, json: async () => null }),
     window: { __ModuleLoader__: { load: (definition) => { registered = definition } } },
     require: (specifier) => {
-      if (specifier === 'react') return { createElement: () => null, useState: () => [null, () => {}] }
-      if (specifier === 'react-dom/client') return { createRoot: () => ({ render: () => {}, unmount: () => {} }) }
+      if (specifier === 'react') return { createElement: (type, props) => ({ type, props }), useState: () => [null, () => {}] }
+      if (specifier === 'react-dom/client') {
+        return {
+          // Invoke function components so CardMenu's real body runs and the
+          // Menu stub captures its props (items/onSelect) for the tests.
+          createRoot: () => ({
+            render: (element) => {
+              while (element !== null && typeof element === 'object' && typeof element.type === 'function') {
+                element = element.type(element.props)
+              }
+            },
+            unmount: () => {},
+          }),
+        }
+      }
       if (specifier === '@deepseek-ai/dsh-client-ui-primitives') {
         return {
-          Menu: stubComponent('Menu'), writeClipboard: () => Promise.resolve(true),
+          Menu: function Menu(props) { menus.push(props); return null },
+          writeClipboard: (value) => { clipboard.push(value); return Promise.resolve(true) },
           IconChevronDownOutline14: stubComponent('Chevron'), IconRightUpOutline16: stubComponent('RightUp'),
           IconFolderOpenOutline16: stubComponent('Folder'), IconCopyOutline16: stubComponent('Copy'),
           IconCheckOutline16: stubComponent('Check'), IconCodeOutline16: stubComponent('Code'),
@@ -129,11 +145,17 @@ async function runTakeover({ wrappedChevron }) {
     effect(fn) { fn() },
   })
   await new Promise((resolve) => setTimeout(resolve, 0))
-  return fake
+  return { fake, menus, clipboard }
+}
+
+function selectItem(menus, id) {
+  const menu = menus[menus.length - 1]
+  assert.notEqual(menu, undefined, 'the CardMenu rendered and captured its Menu props')
+  menu.onSelect(id)
 }
 
 test('the container lands outside the hidden Menu anchor wrapper span', async () => {
-  const fake = await runTakeover({ wrappedChevron: true })
+  const { fake } = await runTakeover({ wrappedChevron: true })
   const container = fake.card.querySelector('[data-fa-host]')
   assert.notEqual(container, null, 'the plugin container was inserted')
   assert.equal(container.parentElement, fake.split, 'container is a direct child of the split, not of the wrapper span')
@@ -141,10 +163,41 @@ test('the container lands outside the hidden Menu anchor wrapper span', async ()
 })
 
 test('the container still sits next to an unwrapped official chevron', async () => {
-  const fake = await runTakeover({ wrappedChevron: false })
-  await runTakeover(fake)
+  const { fake } = await runTakeover({ wrappedChevron: false })
   const container = fake.card.querySelector('[data-fa-host]')
   assert.notEqual(container, null, 'the plugin container was inserted')
   assert.equal(container.parentElement, fake.split, 'container is a sibling of the chevron inside the split')
   assert.equal(fake.split.children.indexOf(container), fake.split.children.indexOf(fake.chevron) + 1, 'container follows the chevron')
+})
+
+test('copy-relative strips the workspace root off absolute presented paths', async () => {
+  const { menus, clipboard } = await runTakeover({
+    wrappedChevron: true,
+    filePath: 'E:\\dev\\v4\\svn\\trunk\\src\\server\\AGENTS.md',
+    cwd: 'E:\\dev\\v4\\svn\\trunk',
+  })
+  selectItem(menus, 'fa:copy-rel')
+  assert.deepEqual(clipboard, ['src\\server\\AGENTS.md'])
+})
+
+test('copy-relative leaves already-relative paths untouched', async () => {
+  const { menus, clipboard } = await runTakeover({ wrappedChevron: true, filePath: 'src/app.py', cwd: '/repo' })
+  selectItem(menus, 'fa:copy-rel')
+  assert.deepEqual(clipboard, ['src/app.py'])
+})
+
+test('copy-relative keeps a POSIX absolute path under the workspace relative', async () => {
+  const { menus, clipboard } = await runTakeover({ wrappedChevron: true, filePath: '/repo/src/app.py', cwd: '/repo' })
+  selectItem(menus, 'fa:copy-rel')
+  assert.deepEqual(clipboard, ['src/app.py'])
+})
+
+test('copy-absolute keeps the full absolute path', async () => {
+  const { menus, clipboard } = await runTakeover({
+    wrappedChevron: true,
+    filePath: 'E:\\dev\\v4\\svn\\trunk\\src\\server\\AGENTS.md',
+    cwd: 'E:\\dev\\v4\\svn\\trunk',
+  })
+  selectItem(menus, 'fa:copy-abs')
+  assert.deepEqual(clipboard, ['E:\\dev\\v4\\svn\\trunk\\src\\server\\AGENTS.md'])
 })
