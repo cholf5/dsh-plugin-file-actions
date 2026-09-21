@@ -3,7 +3,8 @@
 // on any development machine.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, writeFileSync, chmodSync } from 'node:fs'
+import { stat } from 'node:fs/promises'
+import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { apply, loadOfficialOpenInApp } from '../lib/index.js'
@@ -46,6 +47,8 @@ function win32Seam(overrides = {}) {
     ['cursor', { launch: { kind: 'argv', command: 'C:\\Tools\\Cursor.exe', args: [] } }],
     ['windowsterminal', { launch: { kind: 'argv', command: 'C:\\Tools\\wt.exe', args: [] } }],
     ['gitbash', { launch: { kind: 'argv', command: 'C:\\Git\\git-bash.exe', args: ['--cd={path}'] } }],
+    ['ghostty', { launch: { kind: 'argv', command: '/Applications/Ghostty.app', args: [] } }],
+    ['terminal', { launch: { kind: 'argv', command: 'open', args: ['-a', 'Terminal'] } }],
   ])
   const seam = {
     platform: 'win32',
@@ -229,17 +232,37 @@ test('run (posix) executes the file itself through the execute-bit fallback', as
   const commands = []
   const { seam } = win32Seam({
     platform: 'darwin',
+    // The test process may run on Windows, where chmod cannot set an execute
+    // bit: the stat seam fakes the POSIX mode the fallback reads, keeping the
+    // suite deterministic on every development machine.
+    stat: async (path) => {
+      const real = await stat(path)
+      return { ...real, mode: real.mode | 0o111, isFile: () => real.isFile() }
+    },
     runCommand: async (command, args) => { commands.push({ command, args }) },
   })
   const routes = await routesWith(seam)
   const dir = mkdtempSync(join(tmpdir(), 'fa-test-'))
   const file = join(dir, 'tool.bin')
   writeFileSync(file, '\x7fELF')
-  chmodSync(file, 0o755)
   const res = mockRes()
   await routes.get('/api/file-actions/run')(mockReq('POST', JSON.stringify({ app: 'terminal', path: file })), res)
   assert.equal(res.statusCode, 200)
   assert.ok(commands[0].args[1].includes(`do script "cd '${dir}' && '${file}'"`))
+})
+
+test('run answers unavailable-terminal when the terminal never resolved', async () => {
+  const { seam } = win32Seam()
+  const routes = await routesWith(seam)
+  const dir = mkdtempSync(join(tmpdir(), 'fa-test-'))
+  const file = join(dir, 'script.py')
+  writeFileSync(file, 'print(1)')
+  // gnome-terminal is a whitelisted terminal id the seam's map never resolved:
+  // the answer must say "unavailable", not the unactionable "unsupported".
+  const res = mockRes()
+  await routes.get('/api/file-actions/run')(mockReq('POST', JSON.stringify({ app: 'gnometerminal', path: file })), res)
+  assert.equal(res.statusCode, 400)
+  assert.equal(JSON.parse(res.body).code, 'unavailable-terminal')
 })
 
 test('run (win32) opens Git Bash through its own mintty with the cd script', async () => {
@@ -347,13 +370,15 @@ test('run refuses unsupported terminals, directories, and unmapped extensions', 
 test('run routes refuse platform-mismatched and SSH contexts', async () => {
   const { seam } = win32Seam()
   const routes = await routesWith(seam)
-  // 'terminal' exists only in the darwin adapter; the win32 seam answers 400.
+  // 'terminal' resolves in the seam map but the win32 seam has no adapter for
+  // it: the defensive dispatch answer is unsupported-terminal.
   const dir = mkdtempSync(join(tmpdir(), 'fa-test-'))
   const file = join(dir, 'x.py')
   writeFileSync(file, 'x')
   const mismatch = mockRes()
   await routes.get('/api/file-actions/run')(mockReq('POST', JSON.stringify({ app: 'terminal', path: file })), mismatch)
   assert.equal(mismatch.statusCode, 400)
+  assert.equal(JSON.parse(mismatch.body).code, 'unsupported-terminal')
 
   const sshSeam = { ...win32Seam().seam, ssh: true }
   const sshRoutes = await routesWith(sshSeam)

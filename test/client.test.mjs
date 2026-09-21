@@ -54,4 +54,7 @@ test('client menu carries the cross-platform terminal ids and labels', () => {
   // The menu intersects the official probe with the plugin's own availability
   // list so resolver version skew can never show a dead menu entry.
   assert.ok(source.includes('state.info.available'), 'menu intersects info.available')
+  for (const key of ['error.unavailableApp', 'error.unavailableTerminal']) {
+    assert.ok(source.includes(`'${key}':`), `missing locale label ${key}`)
+  }
 })

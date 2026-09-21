@@ -181,7 +181,7 @@ npm install
 node --test test/host.test.mjs test/client.test.mjs
 ```
 
-测试通过 seam 注入（resolver / launcher / runCommand / platform），在任意开发机上确定性覆盖 win32 / linux / darwin 三套适配器，另有一条真实加载官方解析库的集成测试。
+测试通过 seam 注入（resolver / launcher / runCommand / stat / platform），在任意开发机上确定性覆盖 win32 / linux / darwin 三套适配器 —— 包括只读 POSIX mode 的 execute-bit 回退（stat seam 伪造 mode，不依赖 chmod），另有一条真实加载官方解析库的集成测试。
 
 > [!TIP]
 > 通过 `link:` 安装时，改动 `lib/client.js` 会热替换进运行中的 `dsh web`，无需重启；Host 半边的改动需要重启 —— 且 checkout 必须先 `npm install`（依赖从 checkout 的 `node_modules` 解析）。

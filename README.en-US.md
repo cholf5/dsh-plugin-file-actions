@@ -250,9 +250,11 @@ npm install
 node --test test/host.test.mjs test/client.test.mjs
 ```
 
-Tests inject seams (resolver / launcher / runCommand / platform) to cover the
-win32, linux, and darwin adapters deterministically on any development machine,
-plus one integration test that loads the real official resolver library.
+Tests inject seams (resolver / launcher / runCommand / stat / platform) to cover the
+win32, linux, and darwin adapters deterministically on any development machine —
+including the execute-bit fallback that reads a POSIX mode (the stat seam fakes
+the mode, no chmod involved) — plus one integration test that loads the real
+official resolver library.
 
 > [!TIP]
 > With a `link:` install, edits to `lib/client.js` hot-swap into the running
