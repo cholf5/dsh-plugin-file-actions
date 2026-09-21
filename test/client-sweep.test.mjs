@@ -170,6 +170,15 @@ test('the container still sits next to an unwrapped official chevron', async () 
   assert.equal(fake.split.children.indexOf(container), fake.split.children.indexOf(fake.chevron) + 1, 'container follows the chevron')
 })
 
+test('the menu opens above the trigger with the official anchor alignment', async () => {
+  const { menus } = await runTakeover({ wrappedChevron: true })
+  const menu = menus[menus.length - 1]
+  assert.notEqual(menu, undefined, 'the CardMenu rendered and captured its Menu props')
+  assert.equal(menu.side, 'top', 'the long plugin menu must grow upward so the viewport clamp never lands it on the trigger')
+  assert.equal(menu.align, 'end', 'keeps the official right-edge anchor alignment')
+  assert.equal(menu.portal, true, 'keeps the official portaled placement')
+})
+
 test('copy-relative strips the workspace root off absolute presented paths', async () => {
   const { menus, clipboard } = await runTakeover({
     wrappedChevron: true,
