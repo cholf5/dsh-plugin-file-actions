@@ -192,6 +192,25 @@ test('copy-relative keeps a POSIX absolute path under the workspace relative', a
   assert.deepEqual(clipboard, ['src/app.py'])
 })
 
+test('copy-relative matches the root across separator spellings', async () => {
+  const { menus, clipboard } = await runTakeover({
+    wrappedChevron: true,
+    filePath: 'E:\\dev\\v4\\svn\\trunk\\src\\server\\AGENTS.md',
+    cwd: 'E:/dev/v4/svn/trunk',
+  })
+  selectItem(menus, 'fa:copy-rel')
+  assert.deepEqual(clipboard, ['src\\server\\AGENTS.md'])
+})
+
+test('copy-relative keeps the path when the workspace root is unknown', async () => {
+  const { menus, clipboard } = await runTakeover({
+    wrappedChevron: true,
+    filePath: 'E:\\dev\\elsewhere\\notes.md',
+  })
+  selectItem(menus, 'fa:copy-rel')
+  assert.deepEqual(clipboard, ['E:\\dev\\elsewhere\\notes.md'])
+})
+
 test('copy-absolute keeps the full absolute path', async () => {
   const { menus, clipboard } = await runTakeover({
     wrappedChevron: true,
