@@ -50,7 +50,8 @@ in the DSH web GUI:
   path rides in the `title`) and the same menu opens at the cursor. The
   workspace directory comes from the viewed session's `cwd`, which relative
   paths resolve against. The official left-click preview behavior is
-  untouched.
+  untouched. On touch devices the same menu opens on long-press (see
+  "Mobile (touch)" below).
 - 🔗 **Per-link-type right-click menus** — `mailto:` offers **copy email
   address / compose email**; http(s) links offer **copy link / open in the
   built-in browser / open in browser** (the built-in entry appears only when
@@ -106,6 +107,27 @@ Terminal entries carry a hover submenu: **Run this file in a terminal** (the
 command comes from the extension map below; unmapped extensions grey the item
 out) and **Open its containing folder in a terminal** (forwarded to the
 official `POST /open-in-app/open` route with the parent directory).
+
+### 📱 Mobile (touch)
+
+On phones and tablets (`pointer: coarse`) two pieces adapt:
+
+- **Long-press opens the link menu** — touch has no right-click: iOS never
+  fires `contextmenu` for a hold (its native behavior is the link-preview
+  callout), so over the message flow the plugin opens the same menu on a
+  **~0.5 s long-press**, and the release is swallowed so no synthesized click
+  follows the link. The iOS preview callout and the selection loupe are
+  suppressed for message links and inline code (`-webkit-touch-callout` /
+  `user-select`, scoped to the conversation flow, injected under a
+  `data-plugin` style tag and torn down with HMR). Android's native
+  `contextmenu` long-press path keeps working and is de-duplicated against the
+  new press timer.
+- **Terminal submenus flatten** — the official Menu primitive opens submenus
+  beside the parent row with no viewport clamp, so on a 390px phone the side
+  card lands off-screen (measured at x 362..540), and touch has no hover
+  anyway. On touch the terminal actions flatten into the top level: **Run this
+  file in {terminal}** / **Open its containing folder in {terminal}**, one row
+  per action naming the terminal. Desktop keeps the hover submenu.
 
 ## 📦 Install
 
@@ -256,11 +278,17 @@ mentions and markdown file links share one hashed class and carry the path in
 their `title`; the input area's reference chips share the class but mark
 themselves with `data-ref-chip` and are excluded). On a match it prevents the
 native menu and opens the plugin menu at the cursor through the Menu
-primitive's `getAnchorRect` (portal mode). The viewed session's workspace
+primitive's `getAnchorRect` (portal mode). On touch devices a long-press
+detector (`touchstart`/`touchmove`/`touchend`) feeds the same open path — see
+"Mobile (touch)" above. The viewed session's workspace
 directory is published by an empty cell occupying the official
 `conversation.session.header.utilities` slot — the same seat and the same
 standard props (`sessionId` + `useSessions`) the official open-in-app button
-consumes.
+consumes. The URL menu's optional capabilities (built-in browser tab,
+directory picker) are read the way official client plugins do it: declared in
+`exports.inject` as `remote` / `remote.directoryPicker` first — reading an
+undeclared service trips cordis's `cannot get property ... without inject`
+guard and crashes the whole menu render.
 
 > [!IMPORTANT]
 > If the fiber cannot be read (upstream DOM or React changes), the official

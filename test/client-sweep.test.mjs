@@ -135,7 +135,7 @@ function makeFetch({ apps, info } = {}, posts = []) {
   }
 }
 
-async function runTakeover({ wrappedChevron, filePath, cwd, fetch: fetchImpl } = {}) {
+async function runTakeover({ wrappedChevron, filePath, cwd, fetch: fetchImpl, coarse = false } = {}) {
   const fake = makeEnvironment({ wrappedChevron, filePath, cwd })
   const menus = []
   const clipboard = []
@@ -161,7 +161,15 @@ async function runTakeover({ wrappedChevron, filePath, cwd, fetch: fetchImpl } =
       disconnect() { /* the test process exits before dispose matters */ }
     },
     fetch: fetchImpl ?? (async () => ({ ok: false, status: 0, json: async () => null })),
-    window: { __ModuleLoader__: { load: (definition) => { registered = definition } } },
+    // The touch long-press schedules real timers inside the vm realm.
+    setTimeout, clearTimeout,
+    window: {
+      __ModuleLoader__: { load: (definition) => { registered = definition } },
+      // The coarse-pointer probe reads window.matchMedia; absent means fine.
+      matchMedia: coarse
+        ? (query) => ({ matches: query.includes('pointer: coarse') })
+        : undefined,
+    },
     require: (specifier) => {
       if (specifier === 'react') {
         return {
@@ -558,4 +566,101 @@ test('an svn URL in inline code offers the checkout menu', async () => {
   rightClick(listeners, code)
   const ids = Array.from(contextMenu(menus).items.map((item) => item.id))
   assert.deepEqual(ids, ['fa:link:copy', 'fa:link:checkout'])
+})
+
+test('a coarse pointer flattens the terminal submenu into named rows', async () => {
+  // Menu.module.css opens submenus beside the parent row with no viewport
+  // clamp — beside a right-aligned card on a phone the side card is off-screen
+  // (verified at 390px: submenu at x 362..540), so touch gets flat rows.
+  const { menus } = await runTakeover({
+    wrappedChevron: true,
+    coarse: true,
+    fetch: makeFetch({ apps: ['finder', 'terminal'], info: fullInfo }),
+  })
+  const items = cardMenu(menus).items
+  const ids = items.map((item) => item.id)
+  assert.ok(!ids.some((id) => id.startsWith('fa:term:')), 'no submenu parent rows on touch')
+  assert.deepEqual(
+    Array.from(ids.filter((id) => id.startsWith('fa:run:') || id.startsWith('fa:opendir:'))),
+    ['fa:run:terminal', 'fa:opendir:terminal'],
+    'each terminal contributes a run row and an open-directory row',
+  )
+  const run = items.find((item) => item.id === 'fa:run:terminal')
+  assert.equal(run.disabled, false, 'the runnable extension stays live on the flat row')
+  assert.equal(run.label, 'runFileWith', 'the flat row names the terminal through the locale')
+  const dir = items.find((item) => item.id === 'fa:opendir:terminal')
+  assert.equal(dir.label, 'openDirectoryWith', 'the open-directory row names the terminal too')
+})
+
+test('a fine pointer keeps the hover submenu', async () => {
+  const { menus } = await runTakeover({
+    wrappedChevron: true,
+    fetch: makeFetch({ apps: ['finder', 'terminal'], info: fullInfo }),
+  })
+  const ids = cardMenu(menus).items.map((item) => item.id)
+  assert.ok(ids.includes('fa:term:terminal'), 'the desktop keeps the submenu parent row')
+})
+
+const hold = (listeners, type, build) => {
+  const handler = (listeners[type] ?? [])[0]
+  assert.notEqual(handler, undefined, `a ${type} delegation listener is registered`)
+  handler(build())
+}
+
+test('a touch long-press over a link opens the same menu and swallows the release', async () => {
+  const { menus, listeners } = await runTakeover({ wrappedChevron: true })
+  const anchor = makeElement('a', { href: 'https://example.com/docs' })
+  let prevented = false
+  hold(listeners, 'touchstart', () => ({
+    touches: [{ target: anchor, clientX: 40, clientY: 60 }],
+  }))
+  await new Promise((resolve) => setTimeout(resolve, 650))
+  assert.notEqual(contextMenu(menus), undefined, 'the hold opened the link menu')
+  const rect = contextMenu(menus).getAnchorRect()
+  assert.deepEqual(
+    { left: rect.left, top: rect.top },
+    { left: 40, top: 60 },
+    'the panel anchors at the hold point',
+  )
+  hold(listeners, 'touchend', () => ({ preventDefault: () => { prevented = true }, cancelable: true }))
+  assert.equal(prevented, true, 'the release is swallowed so no synthesized click follows the link')
+})
+
+test('a long-press that moves is a scroll and never opens the menu', async () => {
+  const { menus, listeners } = await runTakeover({ wrappedChevron: true })
+  const anchor = makeElement('a', { href: 'https://example.com/docs' })
+  const touch = { target: anchor, clientX: 40, clientY: 60 }
+  hold(listeners, 'touchstart', () => ({ touches: [touch] }))
+  touch.clientX = 200
+  hold(listeners, 'touchmove', () => ({ touches: [touch] }))
+  await new Promise((resolve) => setTimeout(resolve, 650))
+  assert.equal(menus.filter((props) => props.side === 'bottom').length, 0, 'the drag cancelled the press')
+})
+
+test('a touch on an unclassified element never schedules a press', async () => {
+  const { menus, listeners } = await runTakeover({ wrappedChevron: true })
+  const plain = makeElement('button', { className: 'nyYjTG_open' })
+  hold(listeners, 'touchstart', () => ({ touches: [{ target: plain, clientX: 1, clientY: 2 }] }))
+  await new Promise((resolve) => setTimeout(resolve, 650))
+  assert.equal(menus.filter((props) => props.side === 'bottom').length, 0, 'plain text keeps the native long-press behavior')
+})
+
+test('the browser contextmenu after a long-press does not re-render the open menu', async () => {
+  const { menus, listeners } = await runTakeover({ wrappedChevron: true })
+  const anchor = makeElement('a', { href: 'https://example.com/docs' })
+  hold(listeners, 'touchstart', () => ({ touches: [{ target: anchor, clientX: 40, clientY: 60 }] }))
+  await new Promise((resolve) => setTimeout(resolve, 650))
+  const renders = () => menus.filter((props) => props.side === 'bottom').length
+  const afterHold = renders()
+  rightClick(listeners, anchor, 40, 60)
+  assert.equal(renders(), afterHold, 'the Android hold fires its own contextmenu; the guard keeps one menu')
+})
+
+test('the touch-callout stylesheet is tagged with the plugin namespace', async () => {
+  const { fake } = await runTakeover({ wrappedChevron: true })
+  const style = fake.documentElement.querySelector('[data-plugin]')
+  assert.notEqual(style, undefined, 'the plugin stylesheet was appended')
+  assert.equal(style.tagName, 'STYLE')
+  assert.ok(style.textContent.includes('-webkit-touch-callout: none'), 'the iOS link-preview callout is suppressed on menu targets')
+  assert.ok(style.textContent.includes('[data-chat-turn]'), 'the suppression scopes to the conversation flow')
 })

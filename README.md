@@ -30,7 +30,7 @@
 - 🚀 **用探测到的编辑器/IDE 打开该文件** —— VS Code、Cursor、Sublime Text、JetBrains 全家桶等，每项带真实应用图标。应用探测与启动复用官方 `open-in-app` 的解析器：macOS 查 `.app` bundle，Windows 查注册表（App Paths / 卸载记录 / `%ProgramFiles%` 扫描），Linux 查 PATH 与 desktop entry。
 - 📂 **在文件管理器中打开所在文件夹** —— 访达（macOS）/ 文件资源管理器（Windows）/ 文件管理器（Linux），真实应用图标，走官方 `POST /open-in-app/open` 路由，与会话右上角下拉菜单完全一致。
 - ▶️ **在终端运行该文件** / **在终端打开所在目录** —— 跟随本机探测到的终端：macOS 的终端.app / Ghostty，Windows 的 Windows Terminal / Git Bash，Linux 的 GNOME Terminal / Konsole / Ghostty。
-- 🖱️ **会话消息里的链接右键可用** —— 右键点击消息中渲染的文件链接（文件提及 / markdown 文件链接，`title` 即路径），在光标处弹出菜单；工作目录取当前查看会话的 `cwd`，相对路径按它解析。左键的官方预览行为不受影响。
+- 🖱️ **会话消息里的链接右键可用** —— 右键点击消息中渲染的文件链接（文件提及 / markdown 文件链接，`title` 即路径），在光标处弹出菜单；工作目录取当前查看会话的 `cwd`，相对路径按它解析。左键的官方预览行为不受影响。触屏设备上长按同样可用（见下文「移动端」）。
 - 🔗 **按链接类型区分的右键菜单** —— `mailto:` 提供**复制邮箱地址 / 写邮件**；http(s) 链接提供**复制链接 / 在内置浏览器打开 / 在浏览器打开**（部署带内置浏览器 tab 时才出现，打开动作走官方 `sidebarRight` 服务）；git 仓库地址（`.git` 后缀、`git@host:path`、`git://`、`ssh://`，锚点或行内代码）提供**复制链接 / 克隆到…**；svn 地址（`svn://` 家族，行内代码）提供**复制链接 / 检出到…**。克隆/检出会先弹出官方目录选择器选父目录，再由 Host 以 argv 直传运行 `git clone` / `svn checkout`（无 shell，URL 先经严格校验——拒绝前导 `-`、空白与超长串，杜绝选项注入），目标目录取 URL 末段。
 
 > [!NOTE]
@@ -46,6 +46,13 @@
 - 图标来自官方图标路由（`GET /open-in-app/icon/<id>`），与会话右上角同一份真实应用图标（Windows 上从可执行文件提取）；缺失时退回通用占位图形。
 
 终端项有悬停二级菜单：**在终端运行该文件**（命令来自下文的扩展名映射，映射不到的扩展名会置灰）与**在终端打开所在目录**（转发给官方 `POST /open-in-app/open` 路由，传父目录）。
+
+### 📱 移动端（触屏）
+
+手机/平板（`pointer: coarse`）上有两处专门适配：
+
+- **链接长按即菜单** —— 移动端没有右键：iOS 的长按从不触发 `contextmenu` 事件（原生行为是链接预览弹窗），插件在会话消息流里改用 **长按（约 0.5 秒）弹出同款菜单**，长按后抬起不会误触链接跳转。会话消息里的链接与行内代码同时关闭了 iOS 的预览弹窗与选择放大镜（`-webkit-touch-callout` / `user-select`，仅限对话流，带 `data-plugin` 标记的样式注入，随 HMR 卸载）；Android 的原生 `contextmenu` 长按路径继续走原有逻辑，与长按去重。
+- **终端二级菜单拍平** —— 官方 Menu 的二级菜单固定弹在父行右侧且不做视口收拢，390px 宽的手机上会整个弹到屏幕外（实测 x 362..540），触屏也没有 hover。触屏上终端动作直接拍平进顶层菜单：**在 {终端} 中运行该文件** / **在 {终端} 中打开所在目录**，每行点名终端，桌面端保持二级菜单不变。
 
 ## 📦 安装
 
@@ -179,7 +186,7 @@ POSIX 终端在命令结束后保留交互 shell（对齐 Terminal.app 行为）
 
 MutationObserver 监视交付文件卡片（`[data-presented-file]`），读取卡片的 React fiber 拿到 `file` / `cwd` / `onAction` / locale，隐藏官方 chevron，挂载样式一致的插件菜单按钮。
 
-右键菜单走纯事件委托：`document` 级 `contextmenu` 监听匹配官方 markdown 渲染的文件链接按钮（文件提及与 markdown 文件链接共享同一个 hash 类，路径在其 `title` 属性里；输入区的引用 chip 同类但带 `data-ref-chip`，已排除），命中即 `preventDefault` 并在光标处经 `Menu` 的 `getAnchorRect`（portal 模式）弹出菜单。当前会话的工作目录由一个占据官方 `conversation.session.header.utilities` 槽位的空单元格发布 —— 与官方 open-in-app 按钮同一席位、同一标准 props（`sessionId` + `useSessions`）。
+右键菜单走纯事件委托：`document` 级 `contextmenu` 监听匹配官方 markdown 渲染的文件链接按钮（文件提及与 markdown 文件链接共享同一个 hash 类，路径在其 `title` 属性里；输入区的引用 chip 同类但带 `data-ref-chip`，已排除），命中即 `preventDefault` 并在光标处经 `Menu` 的 `getAnchorRect`（portal 模式）弹出菜单。触屏设备上由 `touchstart`/`touchmove`/`touchend` 组成的长按检测走同一条打开路径（见上文「移动端」）。当前会话的工作目录由一个占据官方 `conversation.session.header.utilities` 槽位的空单元格发布 —— 与官方 open-in-app 按钮同一席位、同一标准 props（`sessionId` + `useSessions`）。URL 菜单的可选能力（内置浏览器 tab、目录选择器）按官方插件的方式在 `exports.inject` 里声明 `remote` / `remote.directoryPicker` 后读取 —— 未声明的服务读取会触发 cordis 的 `cannot get property ... without inject` 守卫，让整个菜单渲染崩溃。
 
 > [!IMPORTANT]
 > 若 fiber 无法读取（上游 DOM 或 React 变更），官方 chevron 原样保留 —— 插件退化为不可见而不是弄坏卡片。

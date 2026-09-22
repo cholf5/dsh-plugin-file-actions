@@ -38,8 +38,8 @@ test('bundle registers under the package id with an apply export', () => {
   vm.runInContext(readFileSync(join(here, '../lib/client.js'), 'utf8'), sandbox)
   assert.equal(registered.id, 'dsh-plugin-file-actions')
   const exports = registered.factory(sandbox.require)
-  assert.deepEqual(Array.from(exports.inject).sort(), ['locale', 'slots'],
-    'the client half needs the locale and slots services (the recorder cell reads the viewed session)')
+  assert.deepEqual(Array.from(exports.inject).sort(), ['locale', 'remote', 'remote.directoryPicker', 'slots'],
+    'the client half needs locale/slots plus the remote picker namespace (the URL menus read it per render)')
   assert.equal(typeof exports.apply, 'function')
 })
 
