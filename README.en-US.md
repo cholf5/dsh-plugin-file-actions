@@ -20,21 +20,35 @@ A dual-face DeepSeek Harness plugin that extends the dropdown menu of every
 in the DSH web GUI:
 
 - 📋 **Copy relative path** / **Copy absolute path** — one click each
-  (browser-side, every platform).
+  (browser-side, every platform), closing the menu at the bottom.
 - 🚀 **Open the file in a detected editor or IDE** — VS Code, Cursor, Sublime
   Text, the JetBrains family, and more, each shown with its real application
   icon. Detection and launching reuse the official `open-in-app` resolver:
   macOS checks `.app` bundles, Windows checks the registry (`App Paths`,
   Uninstall records, `%ProgramFiles%` scans), Linux checks PATH names and
   desktop entries.
+- 📂 **Open the containing folder in the file manager** — Finder (macOS) /
+  File Explorer (Windows) / Files (Linux), with the real application icon,
+  through the official `POST /open-in-app/open` route — exactly what the
+  session-header dropdown does.
 - ▶️ **Run this file in a terminal** / **Open its containing folder in a
   terminal** — a submenu per detected terminal: Terminal.app / Ghostty on
   macOS, Windows Terminal / Git Bash on Windows, GNOME Terminal / Konsole /
   Ghostty on Linux.
+- 🖱️ **The same menu on the file links inside session messages** — right-click
+  a file link rendered in a message (file mentions / markdown file links, the
+  path rides in the `title`) and the same menu opens at the cursor. The
+  workspace directory comes from the viewed session's `cwd`, which relative
+  paths resolve against. The official left-click preview behavior is
+  untouched.
 
 > [!NOTE]
-> The two official menu entries (open with the default application, show in the
-> file manager) keep working unchanged.
+> The two original official card entries are not kept: "open with the default
+> application" is covered by the detected editor list (the listed apps are the
+> common default apps, and there is no way to predict what the default app
+> actually is), and "show in the file manager" moves into the application list
+> above — same real icon, same official route. Against the official app
+> whitelist, the card menu's only additions are the two copy-path entries.
 
 ## 🧩 How the application list is decided
 
@@ -48,14 +62,20 @@ resolver probed against the local machine**, no configuration:
   <bundle> <file>` on macOS, a direct spawn of the resolved exe on
   Windows/Linux). When the official catalog gains an app or revises a locator
   spelling, the plugin follows with a release upgrade.
-- The browser half intersects the official probe result
-  (`GET /open-in-app/apps`) with the **local resolution result** the plugin's
-  own info route reports (`available`): an app appears only when the official
-  probe verified it, the plugin's resolver resolved it, and it is whitelisted —
-  so even a version skew between the plugin's resolver copy and the host dsh's
-  can never reproduce "the menu shows it, the click 400s". Newly installed
-  apps appear after the next `dsh web` restart; uninstalled apps disappear
-  immediately.
+- Editors and terminals take a **double intersection**: the browser half
+  intersects the official probe result (`GET /open-in-app/apps`) with the
+  **local resolution result** the plugin's own info route reports
+  (`available`): an app appears only when the official probe verified it, the
+  plugin's resolver resolved it, and it is whitelisted — so even a version
+  skew between the plugin's resolver copy and the host dsh's can never
+  reproduce "the menu shows it, the click 400s". Newly installed apps appear
+  after the next `dsh web` restart; uninstalled apps disappear immediately.
+- The file-manager entry **follows the official probe alone** (macOS `finder`
+  / Windows `explorer` / Linux `filemanager` — first in the official
+  catalog's menu order): its launch is the official `POST /open-in-app/open`
+  with the file's directory — the exact call the session-header split button
+  makes — so the official route itself is the complete "menu shows it, the
+  click works" guarantee; no plugin-side intersection applies.
 - Icons come from the official icon route (`GET /open-in-app/icon/<id>`) — the
   same real application icons as the session header (extracted from the
   executable on Windows); a generic glyph stands in when missing.
@@ -142,7 +162,7 @@ Restart `dsh web` afterwards.
 | Installed but the UI is unchanged | restart `dsh web` (bundle layers don't hot-reload), then refresh the page |
 | The extended menu never appears on cards | fiber probing failed and the plugin fell back to the official chevron (see known limitations); check the DevTools console first |
 | `dsh web` boot log shows a `file-actions:` error, or `Cannot find package '@deepseek-ai/dsh-host-open-in-app'` | the official dependency is missing or unresolvable — for `link:` installs run `npm install` inside the checkout; for npm/git installs reinstall with `dsh plugin --profile web update dsh-plugin-file-actions -w` |
-| An editor/terminal is missing from the menu | the app was not verified by BOTH the official probe and the plugin's own resolution (does it appear in the official split-button menu?) — both intersections must pass |
+| An editor/terminal is missing from the menu | the app was not verified by BOTH the official probe and the plugin's own resolution (does it appear in the official split-button menu?) — both intersections must pass. The file manager follows the official probe alone: if the official split-button menu has it, the card menu will too |
 
 ## ⚙️ Configuration
 
@@ -206,6 +226,18 @@ A MutationObserver watches presented-file cards (`[data-presented-file]`),
 reads the card's React fiber for `file` / `cwd` / `onAction` / locale, hides
 the official chevron, and mounts a style-consistent plugin menu button.
 
+The right-click menu is pure event delegation: a document-level `contextmenu`
+listener matches the file-link buttons the official markdown renders (file
+mentions and markdown file links share one hashed class and carry the path in
+their `title`; the input area's reference chips share the class but mark
+themselves with `data-ref-chip` and are excluded). On a match it prevents the
+native menu and opens the plugin menu at the cursor through the Menu
+primitive's `getAnchorRect` (portal mode). The viewed session's workspace
+directory is published by an empty cell occupying the official
+`conversation.session.header.utilities` slot — the same seat and the same
+standard props (`sessionId` + `useSessions`) the official open-in-app button
+consumes.
+
 > [!IMPORTANT]
 > If the fiber cannot be read (upstream DOM or React changes), the official
 > chevron stays in place — the plugin degrades to invisible instead of breaking
@@ -215,10 +247,10 @@ the official chevron, and mounts a style-consistent plugin menu button.
 
 - **The application catalog is fixed**, aligned with the official open-in-app
   philosophy: deployers cannot add their own editors from cordis.yml; extending
-  the table means extending the host's `EDITOR_IDS`/`TERMINALS` and the client
-  dictionaries. What appears is decided entirely by the official probe (the
-  official catalog declares no win32 locators for Zed, so Zed never shows on
-  Windows, for example).
+  the table means extending the host's `EDITOR_IDS`/`TERMINALS` (or the
+  client's `FILE_MANAGER_IDS`) and the client dictionaries. What appears is
+  decided entirely by the official probe (the official catalog declares no
+  win32 locators for Zed, so Zed never shows on Windows, for example).
 - **Run commands are recognized by extension.** Unmapped extensions get the
   "run" offer based on executability: POSIX consults the execute bit (which the
   client cannot see), Windows derives it from the extension
@@ -242,6 +274,13 @@ the official chevron, and mounts a style-consistent plugin menu button.
 - **Fiber-based augmentation.** If a dsh upgrade changes the presented-file
   card internals, the menu may stop appearing (the official chevron is restored
   automatically); updating the fiber probe and selectors restores it.
+- **The right-click menu depends on the official file-link DOM shape.** The
+  match condition is "the `fileMention` hashed class + the path in `title`" on
+  a button; if a dsh upgrade changes the markdown rendering (class renamed,
+  path moved elsewhere), the context menu silently stops appearing (plain
+  right-clicks keep working); updating `LINK_SELECTOR` restores it. File links
+  rendered outside the viewed session's context resolve their paths against
+  the currently viewed session's `cwd`.
 
 ## 🛠️ Development
 

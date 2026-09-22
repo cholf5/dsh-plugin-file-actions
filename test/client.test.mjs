@@ -38,7 +38,8 @@ test('bundle registers under the package id with an apply export', () => {
   vm.runInContext(readFileSync(join(here, '../lib/client.js'), 'utf8'), sandbox)
   assert.equal(registered.id, 'dsh-plugin-file-actions')
   const exports = registered.factory(sandbox.require)
-  assert.equal(exports.inject[0], 'locale')
+  assert.deepEqual(Array.from(exports.inject).sort(), ['locale', 'slots'],
+    'the client half needs the locale and slots services (the recorder cell reads the viewed session)')
   assert.equal(typeof exports.apply, 'function')
 })
 
@@ -57,4 +58,34 @@ test('client menu carries the cross-platform terminal ids and labels', () => {
   for (const key of ['error.unavailableApp', 'error.unavailableTerminal']) {
     assert.ok(source.includes(`'${key}':`), `missing locale label ${key}`)
   }
+})
+
+test('client menu carries the official file-manager ids and labels', () => {
+  const source = readFileSync(join(here, '../lib/client.js'), 'utf8')
+  assert.ok(
+    source.includes("'finder', 'explorer', 'filemanager'"),
+    'file-manager id list covers every official file-manager catalog id',
+  )
+  for (const id of ['finder', 'explorer', 'filemanager']) {
+    assert.ok(source.includes(`'app.${id}':`), `missing a locale label for ${id}`)
+  }
+  // The file manager launches through the official open route — the
+  // session-header split button's exact call — never the plugin launch route.
+  assert.ok(source.includes("'/open-in-app/open'"), 'file manager forwards to the official open route')
+  // The two replaced official card entries must not come back.
+  assert.ok(!source.includes("'fa:open'"), 'the default-app entry is removed')
+  assert.ok(!source.includes("'fa:reveal'"), 'the custom reveal entry is removed')
+})
+
+test('client context menu targets the official message file links', () => {
+  const source = readFileSync(join(here, '../lib/client.js'), 'utf8')
+  assert.ok(
+    source.includes("'conversation.session.header.utilities'"),
+    'the cwd recorder occupies the official session-header utilities slot',
+  )
+  assert.ok(
+    source.includes('button[class*="fileMention"][title]:not([data-ref-chip])'),
+    'the right-click delegation matches the official file-link buttons and excludes the input-area reference chips',
+  )
+  assert.ok(source.includes('contextmenu'), 'a contextmenu delegation listener is registered')
 })

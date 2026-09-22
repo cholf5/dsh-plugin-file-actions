@@ -26,6 +26,19 @@ function makeElement(tagName, attrs = {}, parent = null) {
     setAttribute(key, value) { this.attrs[key] = String(value) },
     getAttribute(key) { return key in this.attrs ? this.attrs[key] : null },
     removeAttribute(key) { delete this.attrs[key] },
+    appendChild(child) {
+      this.children.push(child)
+      child.parentElement = this
+      return child
+    },
+    closest(selector) {
+      let node = this
+      while (node !== null) {
+        if (matches(node, selector)) return node
+        node = node.parentElement
+      }
+      return null
+    },
     insertAdjacentElement(position, node) {
       if (position !== 'afterend') throw new Error(`unexpected position ${position}`)
       const at = this.parentElement.children.indexOf(this)
@@ -57,7 +70,7 @@ function queryAll(element) {
   return found
 }
 
-/** Only the three selector shapes the client half actually issues. */
+/** Only the selector shapes the client half actually issues. */
 function matches(element, selector) {
   if (selector === 'div[class*="split"]') {
     return element.tagName === 'DIV' && element.className.includes('split')
@@ -65,6 +78,11 @@ function matches(element, selector) {
   if (selector === 'button[aria-haspopup="menu"]:not([data-fa-anchor])') {
     return element.tagName === 'BUTTON' && element.attrs['aria-haspopup'] === 'menu'
       && element.attrs['data-fa-anchor'] === undefined
+  }
+  if (selector === 'button[class*="fileMention"][title]:not([data-ref-chip])') {
+    return element.tagName === 'BUTTON' && element.className.includes('fileMention')
+      && element.attrs['title'] !== undefined && element.attrs['title'] !== ''
+      && element.attrs['data-ref-chip'] === undefined
   }
   const bare = selector.match(/^\[([a-z-]+)\]$/)
   if (bare !== null) return element.attrs[bare[1]] !== undefined
@@ -90,27 +108,63 @@ function makeEnvironment({ wrappedChevron, filePath = 'src/app.py', cwd }) {
   return { documentElement, card, split, openButton, chevron, wrapper }
 }
 
-async function runTakeover({ wrappedChevron, filePath, cwd } = {}) {
+/** A fetch stub answering the plugin's GET probes and capturing its POSTs. */
+function makeFetch({ apps, info } = {}, posts = []) {
+  return async (url, options) => {
+    const target = String(url)
+    if (options !== undefined && options.method === 'POST') {
+      posts.push({ url: target, body: JSON.parse(options.body) })
+      return { ok: true, status: 200, json: async () => ({ ok: true }) }
+    }
+    if (target.includes('/open-in-app/apps')) {
+      return apps === undefined
+        ? { ok: false, status: 404, json: async () => null }
+        : { ok: true, status: 200, json: async () => ({ apps }) }
+    }
+    if (target.includes('/api/file-actions/info')) {
+      return info === undefined
+        ? { ok: false, status: 404, json: async () => null }
+        : { ok: true, status: 200, json: async () => info }
+    }
+    return { ok: false, status: 404, json: async () => null }
+  }
+}
+
+async function runTakeover({ wrappedChevron, filePath, cwd, fetch: fetchImpl } = {}) {
   const fake = makeEnvironment({ wrappedChevron, filePath, cwd })
   const menus = []
   const clipboard = []
+  const listeners = {}
+  const slots = []
   let registered
   const sandbox = {
     document: {
       documentElement: fake.documentElement,
+      body: makeElement('body', {}, fake.documentElement),
       querySelectorAll: (selector) => queryAll(fake.documentElement)
         .filter((element) => matches(element, selector)),
       createElement: (tag) => makeElement(tag),
+      addEventListener: (type, fn) => { (listeners[type] ??= []).push(fn) },
+      removeEventListener: (type, fn) => {
+        listeners[type] = (listeners[type] ?? []).filter((listener) => listener !== fn)
+      },
     },
     MutationObserver: class {
       constructor(callback) { this.callback = callback }
       observe() { queueMicrotask(() => this.callback([], this)) }
       disconnect() { /* the test process exits before dispose matters */ }
     },
-    fetch: async () => ({ ok: false, status: 0, json: async () => null }),
+    fetch: fetchImpl ?? (async () => ({ ok: false, status: 0, json: async () => null })),
     window: { __ModuleLoader__: { load: (definition) => { registered = definition } } },
     require: (specifier) => {
-      if (specifier === 'react') return { createElement: (type, props) => ({ type, props }), useState: () => [null, () => {}] }
+      if (specifier === 'react') {
+        return {
+          createElement: (type, props) => ({ type, props }),
+          useState: () => [null, () => {}],
+          // The recorder publishes its cwd from the effect; run it inline.
+          useEffect: (fn) => { fn() },
+        }
+      }
       if (specifier === 'react-dom/client') {
         return {
           // Invoke function components so CardMenu's real body runs and the
@@ -142,16 +196,33 @@ async function runTakeover({ wrappedChevron, filePath, cwd } = {}) {
   const exports = registered.factory(sandbox.require)
   await exports.apply({
     locale: { register: () => undefined, bind: () => (key) => key },
+    slots: {
+      // Invoke the callback synchronously: the "declaration already exists" path.
+      inject: (key, callback) => { callback(); return () => {} },
+      register: (options, component) => { slots.push({ options, component }); return () => {} },
+    },
     effect(fn) { fn() },
   })
   await new Promise((resolve) => setTimeout(resolve, 0))
-  return { fake, menus, clipboard }
+  return { fake, menus, clipboard, listeners, slots }
 }
 
 function selectItem(menus, id) {
-  const menu = menus[menus.length - 1]
+  cardMenu(menus).onSelect(id)
+}
+
+/** The card menu captures: the takeover menu grows upward from the trigger. */
+function cardMenu(menus) {
+  const menu = menus.filter((props) => props.side === 'top').pop()
   assert.notEqual(menu, undefined, 'the CardMenu rendered and captured its Menu props')
-  menu.onSelect(id)
+  return menu
+}
+
+/** The context menu captures: anchored at the cursor, growing downward. */
+function contextMenu(menus) {
+  const menu = menus.filter((props) => props.side === 'bottom').pop()
+  assert.notEqual(menu, undefined, 'the LinkMenu rendered and captured its Menu props')
+  return menu
 }
 
 test('the container lands outside the hidden Menu anchor wrapper span', async () => {
@@ -172,7 +243,7 @@ test('the container still sits next to an unwrapped official chevron', async () 
 
 test('the menu opens above the trigger with the official anchor alignment', async () => {
   const { menus } = await runTakeover({ wrappedChevron: true })
-  const menu = menus[menus.length - 1]
+  const menu = cardMenu(menus)
   assert.notEqual(menu, undefined, 'the CardMenu rendered and captured its Menu props')
   assert.equal(menu.side, 'top', 'the long plugin menu must grow upward so the viewport clamp never lands it on the trigger')
   assert.equal(menu.align, 'end', 'keeps the official right-edge anchor alignment')
@@ -235,4 +306,131 @@ test('copy-absolute keeps the full absolute path', async () => {
   })
   selectItem(menus, 'fa:copy-abs')
   assert.deepEqual(clipboard, ['E:\\dev\\v4\\svn\\trunk\\src\\server\\AGENTS.md'])
+})
+
+const fullInfo = {
+  editors: ['vscode'],
+  terminals: ['terminal'],
+  runExtensions: ['py'],
+  allowExecutableBit: true,
+  available: ['finder', 'vscode', 'terminal'],
+}
+
+test('the two official card entries are replaced by the official file-manager app entry', async () => {
+  const { menus } = await runTakeover({
+    wrappedChevron: true,
+    filePath: 'src/app.py',
+    cwd: '/repo',
+    fetch: makeFetch({ apps: ['finder', 'vscode', 'terminal'], info: fullInfo }),
+  })
+  const menu = cardMenu(menus)
+  const ids = menu.items.map((item) => item.id)
+  assert.ok(!ids.includes('fa:open'), 'the default-app entry is gone')
+  assert.ok(!ids.includes('fa:reveal'), 'the custom reveal entry is gone')
+  const editor = ids.indexOf('fa:app:vscode')
+  assert.equal(ids[0], 'fa:fm:finder', 'the file manager leads the menu — first in the official catalog order')
+  assert.ok(ids.indexOf('fa:fm:finder') < editor, 'the file manager precedes the editors')
+  assert.equal(ids.indexOf('fa:sep-copies'), ids.length - 3, 'a separator stands before the copy entries')
+  // Array.from copies the VM-realm array into a host one — deepStrictEqual
+  // compares prototypes, and a vm-created array fails it against a literal.
+  assert.deepEqual(Array.from(ids.slice(-2)), ['fa:copy-rel', 'fa:copy-abs'], 'the copy entries close the menu')
+})
+
+test('the file manager appears once the official probe lands, before the plugin info', async () => {
+  const { menus } = await runTakeover({
+    wrappedChevron: true,
+    fetch: makeFetch({ apps: ['finder'] }),
+  })
+  const menu = cardMenu(menus)
+  const ids = menu.items.map((item) => item.id)
+  assert.ok(ids.includes('fa:fm:finder'), 'the file manager is gated on the official probe alone')
+  assert.ok(!ids.some((id) => id.startsWith('fa:app:') || id.startsWith('fa:term:')),
+    'editors/terminals still wait for the plugin info')
+})
+
+test('selecting the file manager opens the containing directory through the official route', async () => {
+  const posts = []
+  const { menus } = await runTakeover({
+    wrappedChevron: true,
+    filePath: 'src/app.py',
+    cwd: '/repo',
+    fetch: makeFetch({ apps: ['finder'], info: fullInfo }, posts),
+  })
+  selectItem(menus, 'fa:fm:finder')
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.deepEqual(posts, [
+    { url: '/open-in-app/open', body: { app: 'finder', path: '/repo/src' } },
+  ], 'the official open route receives the file manager id and the file\'s directory')
+})
+
+const recorderProps = {
+  sessionId: 's1',
+  useSessions: (selector) => selector({ byId: { s1: { cwd: '/repo' } } }),
+}
+
+const rightClick = (listeners, target, x = 40, y = 60) => {
+  let prevented = false
+  const handler = (listeners.contextmenu ?? [])[0]
+  assert.notEqual(handler, undefined, 'the contextmenu delegation listener is registered')
+  handler({ target, clientX: x, clientY: y, preventDefault: () => { prevented = true } })
+  return prevented
+}
+
+test('right-clicking a message file link opens the same menu anchored at the cursor', async () => {
+  const { menus, listeners, slots } = await runTakeover({
+    wrappedChevron: true,
+    fetch: makeFetch({ apps: ['finder', 'vscode'], info: fullInfo }),
+  })
+  const cell = slots.find((entry) => entry.options.id === 'file-actions')
+  assert.notEqual(cell, undefined, 'the cwd recorder occupies the session-header utilities slot')
+  cell.component(recorderProps)
+  const link = makeElement('button', { className: 'fileMention_uddqf_85 fileLink_uddqf_59', title: 'src/app.py' })
+  assert.equal(rightClick(listeners, link), true, 'the native context menu is suppressed')
+  const menu = contextMenu(menus)
+  const ids = menu.items.map((item) => item.id)
+  assert.equal(ids[0], 'fa:fm:finder', 'the same app section leads the context menu')
+  assert.ok(ids.includes('fa:app:vscode'), 'the editors ride the same whitelist')
+  assert.deepEqual(Array.from(ids.slice(-2)), ['fa:copy-rel', 'fa:copy-abs'], 'the copy entries close the context menu')
+  const rect = menu.getAnchorRect()
+  assert.deepEqual(
+    { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom },
+    { left: 40, right: 40, top: 60, bottom: 60 },
+    'the panel anchors at the cursor through getAnchorRect',
+  )
+})
+
+test('an editor picked in the link context menu launches with the cwd-resolved absolute path', async () => {
+  const posts = []
+  const { menus, listeners, slots } = await runTakeover({
+    wrappedChevron: true,
+    fetch: makeFetch({ apps: ['finder', 'vscode'], info: fullInfo }, posts),
+  })
+  slots.find((entry) => entry.options.id === 'file-actions').component(recorderProps)
+  const link = makeElement('button', { className: 'fileMention_uddqf_85', title: 'src/app.py' })
+  rightClick(listeners, link)
+  contextMenu(menus).onSelect('fa:app:vscode')
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.deepEqual(posts, [
+    { url: '/api/file-actions/launch', body: { app: 'vscode', path: '/repo/src/app.py' } },
+  ], 'the link title resolves through the viewed session\'s workspace directory')
+})
+
+test('copy-relative from the link context menu strips the workspace root', async () => {
+  const { menus, clipboard, listeners, slots } = await runTakeover({
+    wrappedChevron: true,
+    fetch: makeFetch({ apps: ['finder'] }),
+  })
+  slots.find((entry) => entry.options.id === 'file-actions').component(recorderProps)
+  const link = makeElement('button', { className: 'fileMention_uddqf_85', title: '/repo/src/app.py' })
+  rightClick(listeners, link)
+  contextMenu(menus).onSelect('fa:copy-rel')
+  assert.deepEqual(clipboard, ['src/app.py'])
+})
+
+test('a right-click on a reference chip or a plain element keeps the native menu', async () => {
+  const { listeners } = await runTakeover({ wrappedChevron: true })
+  const chip = makeElement('button', { className: 'fileMention_uddqf_85', title: '/some-skill', 'data-ref-chip': 'file' })
+  assert.equal(rightClick(listeners, chip), false, 'input-area reference chips are excluded')
+  const plain = makeElement('button', { className: 'nyYjTG_open', title: 'src/app.py' })
+  assert.equal(rightClick(listeners, plain), false, 'buttons without the fileMention class are excluded')
 })

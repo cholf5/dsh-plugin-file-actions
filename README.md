@@ -16,19 +16,22 @@
 
 一个双面 DeepSeek Harness 插件，扩展 Web 界面里**交付文件卡片**（会话收尾列出的文件列表）的下拉菜单：
 
-- 📋 **复制相对路径** / **复制绝对路径** —— 一次点击（纯浏览器侧，全平台）。
+- 📋 **复制相对路径** / **复制绝对路径** —— 一次点击（纯浏览器侧，全平台），置于菜单底部收尾。
 - 🚀 **用探测到的编辑器/IDE 打开该文件** —— VS Code、Cursor、Sublime Text、JetBrains 全家桶等，每项带真实应用图标。应用探测与启动复用官方 `open-in-app` 的解析器：macOS 查 `.app` bundle，Windows 查注册表（App Paths / 卸载记录 / `%ProgramFiles%` 扫描），Linux 查 PATH 与 desktop entry。
+- 📂 **在文件管理器中打开所在文件夹** —— 访达（macOS）/ 文件资源管理器（Windows）/ 文件管理器（Linux），真实应用图标，走官方 `POST /open-in-app/open` 路由，与会话右上角下拉菜单完全一致。
 - ▶️ **在终端运行该文件** / **在终端打开所在目录** —— 跟随本机探测到的终端：macOS 的终端.app / Ghostty，Windows 的 Windows Terminal / Git Bash，Linux 的 GNOME Terminal / Konsole / Ghostty。
+- 🖱️ **会话消息里的文件链接同样可用** —— 右键点击消息中渲染的文件链接（文件提及 / markdown 文件链接，`title` 即路径），在光标处弹出同一份菜单；工作目录取当前查看会话的 `cwd`，相对路径按它解析。左键的官方预览行为不受影响。
 
 > [!NOTE]
-> 官方的两项（用默认应用打开、在文件管理器中显示）保持不变。
+> 官方卡片菜单原有的两项不再保留：「用默认应用打开」由探测到的编辑器列表覆盖（列出的应用本来就是常见默认应用，而默认应用具体是什么用户无从预知）；「在文件管理器中显示」并入上面的应用列表 —— 同款真实图标、同款官方路由。卡片菜单相对官方应用白名单的增量，只有两个复制路径。
 
 ## 🧩 应用列表如何决定
 
 与官方 `open-in-app` 机制对齐 —— **官方解析器 + 本机探测过滤**，零配置：
 
 - Host 半边直接加载官方 `@deepseek-ai/dsh-host-open-in-app` 包的解析库（精确锁版本），用与官方完全相同的定位链在本机解析每个应用，再以文件路径为参数启动解析到的可执行文件（macOS `open -a <bundle> <文件>`，Windows/Linux 直接 spawn 解析到的 exe）。官方 catalog 新增应用或调整定位拼写时，随插件发版升级。
-- 浏览器半边把官方探测结果（`GET /open-in-app/apps`）与插件 info 路由返回的**本机解析结果**（`available` 字段）做交集：只有官方验证过 **且** 插件自己解析成功 **且** 在白名单内的应用才会出现 —— 即使插件随附的解析库与宿主 dsh 的版本有差异，也不可能再现「菜单里有、点了 400」。新装应用在下次 `dsh web` 重启后出现，卸载后立即消失。
+- 编辑器与终端做**双交集**：浏览器半边把官方探测结果（`GET /open-in-app/apps`）与插件 info 路由返回的**本机解析结果**（`available` 字段）相交 —— 只有官方验证过 **且** 插件自己解析成功 **且** 在白名单内的应用才会出现 —— 即使插件随附的解析库与宿主 dsh 的版本有差异，也不可能再现「菜单里有、点了 400」。新装应用在下次 `dsh web` 重启后出现，卸载后立即消失。
+- 文件管理器项**只跟随官方探测**（macOS `finder` / Windows `explorer` / Linux `filemanager`，官方 catalog 菜单顺序的第一位）：它的启动就是官方 `POST /open-in-app/open` 传文件所在目录 —— 与会话右上角 split 按钮完全同一个调用 —— 因此官方路由自身就是「菜单里有、点了就能用」的完整保证，无需插件解析交集。
 - 图标来自官方图标路由（`GET /open-in-app/icon/<id>`），与会话右上角同一份真实应用图标（Windows 上从可执行文件提取）；缺失时退回通用占位图形。
 
 终端项有悬停二级菜单：**在终端运行该文件**（命令来自下文的扩展名映射，映射不到的扩展名会置灰）与**在终端打开所在目录**（转发给官方 `POST /open-in-app/open` 路由，传父目录）。
@@ -106,7 +109,7 @@ npx @deepseek-ai/dsh plugin --profile web update dsh-plugin-file-actions -w    #
 | 装了但界面没变化 | 重启 `dsh web`（bundle 层不热加载），再刷新页面 |
 | 扩展菜单一直不出现在卡片上 | fiber 探测失败，插件已回退到官方 chevron（见已知限制）；先看 DevTools Console 有无报错 |
 | `dsh web` 启动日志报 `file-actions:` 开头的错误，或 `Cannot find package '@deepseek-ai/dsh-host-open-in-app'` | 官方依赖没装或解析不到 —— `link:` 安装先在 checkout 里 `npm install`；npm/git 安装用 `dsh plugin --profile web update dsh-plugin-file-actions -w` 重装 |
-| 菜单里没有某个编辑器/终端 | 该应用未被「官方探测 + 插件解析」双重验证（检查官方 split 按钮菜单里有没有它）—— 两个交集都通过才会出现 |
+| 菜单里没有某个编辑器/终端 | 该应用未被「官方探测 + 插件解析」双重验证（检查官方 split 按钮菜单里有没有它）—— 两个交集都通过才会出现。文件管理器（访达等）只看官方探测：官方 split 菜单里有它，卡片菜单才会有 |
 
 ## ⚙️ 配置
 
@@ -163,16 +166,19 @@ POSIX 终端在命令结束后保留交互 shell（对齐 Terminal.app 行为）
 
 MutationObserver 监视交付文件卡片（`[data-presented-file]`），读取卡片的 React fiber 拿到 `file` / `cwd` / `onAction` / locale，隐藏官方 chevron，挂载样式一致的插件菜单按钮。
 
+右键菜单走纯事件委托：`document` 级 `contextmenu` 监听匹配官方 markdown 渲染的文件链接按钮（文件提及与 markdown 文件链接共享同一个 hash 类，路径在其 `title` 属性里；输入区的引用 chip 同类但带 `data-ref-chip`，已排除），命中即 `preventDefault` 并在光标处经 `Menu` 的 `getAnchorRect`（portal 模式）弹出菜单。当前会话的工作目录由一个占据官方 `conversation.session.header.utilities` 槽位的空单元格发布 —— 与官方 open-in-app 按钮同一席位、同一标准 props（`sessionId` + `useSessions`）。
+
 > [!IMPORTANT]
 > 若 fiber 无法读取（上游 DOM 或 React 变更），官方 chevron 原样保留 —— 插件退化为不可见而不是弄坏卡片。
 
 ## 🚧 已知限制
 
-- **应用目录表固定**，对齐官方 open-in-app 哲学：部署方无法从 cordis.yml 添加自己的编辑器；扩展表意味着同时扩展 Host 的 `EDITOR_IDS`/`TERMINALS` 与客户端字典。哪些应用出现完全由官方探测决定（例如官方 catalog 未给 Zed 声明 win32 定位，Windows 上就不会出现 Zed）。
+- **应用目录表固定**，对齐官方 open-in-app 哲学：部署方无法从 cordis.yml 添加自己的编辑器；扩展表意味着同时扩展 Host 的 `EDITOR_IDS`/`TERMINALS`（或客户端的 `FILE_MANAGER_IDS`）与客户端字典。哪些应用出现完全由官方探测决定（例如官方 catalog 未给 Zed 声明 win32 定位，Windows 上就不会出现 Zed）。
 - **运行命令按扩展名识别。** 扩展名未映射的文件按可执行性提供「运行」：POSIX 看可执行位（客户端看不到它），Windows 按扩展名推导（`.exe`/`.bat`/`.cmd`/`.com`，chmod 在 Windows 上无效果；`.bat`/`.cmd` 默认已映射到 `cmd /c`）。无扩展名文件在 Windows 上不提供「运行」。需要时配置 `runCommands`。
 - **Windows Terminal 的运行命令经 cmd 解释。** 命令字符串由 `cmd /k` 执行，配置值里的 cmd 元字符会被展开；`.sh` 等脚本建议在 Git Bash 终端里运行（其命令在 MSYS bash 上下文中执行）。Git Bash 的「运行」依赖完整 Git for Windows 安装自带的 mintty。
 - **官方依赖精确锁版本。** Host 通过包清单定位 `@deepseek-ai/dsh-host-open-in-app` 的 `lib/types/resolver.js`（已发布 tarball 内含，并按版本尝试多种布局），依赖精确锁定在 `0.1.6-alpha.2`、不随 `dsh plugin update` 漂移；宿主 dsh 自带另一份解析库，两份可能的差异由客户端的双交集（官方探测 ∩ 插件解析）兜底。若未来版本改动布局，插件在启动时以 `file-actions:` 开头的明确错误失败，不会静默退化。
 - **增强读取 React fiber。** dsh 升级若改变了交付卡片内部结构，菜单可能不再出现（官方 chevron 自动恢复）；更新 fiber 探测与选择器即可恢复。
+- **右键菜单依赖官方文件链接的 DOM 形态。** 匹配条件是「`fileMention` hash 类 + `title` 即路径」的按钮；dsh 升级若改变 markdown 渲染（类名换名、路径改存他处），右键菜单会静默失效（普通右键原样保留），更新 `LINK_SELECTOR` 即可。侧边栏等非当前会话语境里的文件链接会按当前查看会话的 `cwd` 解析路径。
 
 ## 🛠️ 开发
 
