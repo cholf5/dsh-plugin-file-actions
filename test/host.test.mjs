@@ -81,11 +81,11 @@ function win32Seam(overrides = {}) {
   return { seam, launched, resolvedMap }
 }
 
-test('registers the three exact /api routes', async () => {
+test('registers the four exact /api routes', async () => {
   const routes = await routesWith(win32Seam().seam)
   assert.deepEqual(
     [...routes.keys()].sort(),
-    ['/api/file-actions/info', '/api/file-actions/launch', '/api/file-actions/run'],
+    ['/api/file-actions/clone', '/api/file-actions/info', '/api/file-actions/launch', '/api/file-actions/run'],
   )
 })
 
@@ -393,6 +393,125 @@ test('run routes refuse platform-mismatched and SSH contexts', async () => {
   const sshLaunch = mockRes()
   await sshRoutes.get('/api/file-actions/launch')(mockReq('POST', JSON.stringify({ app: 'vscode', path: '/tmp' })), sshLaunch)
   assert.equal(sshLaunch.statusCode, 400)
+})
+
+test('clone (git) spawns argv git clone into the derived directory', async () => {
+  const commands = []
+  const { seam } = win32Seam({
+    runCommand: async (command, args, options) => { commands.push({ command, args, options }) },
+  })
+  const routes = await routesWith(seam)
+  const parent = mkdtempSync(join(tmpdir(), 'fa-clone-'))
+  const res = mockRes()
+  await routes.get('/api/file-actions/clone')(
+    mockReq('POST', JSON.stringify({ url: 'https://github.com/u/Repo.git', vcs: 'git', parent })),
+    res,
+  )
+  assert.equal(res.statusCode, 200)
+  assert.equal(commands.length, 1)
+  assert.equal(commands[0].command, 'git')
+  assert.deepEqual(commands[0].args, ['clone', 'https://github.com/u/Repo.git', join(parent, 'Repo')])
+  assert.equal(commands[0].options.timeout, 120000)
+  assert.equal(commands[0].options.env.GIT_TERMINAL_PROMPT, '0', 'interactive prompts stay off so private repos fail fast')
+})
+
+test('clone (svn) spawns argv svn checkout non-interactively', async () => {
+  const commands = []
+  const { seam } = win32Seam({
+    runCommand: async (command, args) => { commands.push({ command, args }) },
+  })
+  const routes = await routesWith(seam)
+  const parent = mkdtempSync(join(tmpdir(), 'fa-clone-'))
+  const res = mockRes()
+  await routes.get('/api/file-actions/clone')(
+    mockReq('POST', JSON.stringify({ url: 'svn://example.com/repo/trunk', vcs: 'svn', parent }), 'application/json'),
+    res,
+  )
+  assert.equal(res.statusCode, 200)
+  assert.deepEqual(commands, [{
+    command: 'svn',
+    args: ['checkout', 'svn://example.com/repo/trunk', join(parent, 'trunk'), '--non-interactive'],
+  }])
+})
+
+test('clone derives the SCP repo name after the host colon', async () => {
+  const commands = []
+  const { seam } = win32Seam({
+    runCommand: async (command, args) => { commands.push({ command, args }) },
+  })
+  const routes = await routesWith(seam)
+  const parent = mkdtempSync(join(tmpdir(), 'fa-clone-'))
+  const res = mockRes()
+  await routes.get('/api/file-actions/clone')(
+    mockReq('POST', JSON.stringify({ url: 'git@github.com:cholf5/dsh-plugin-file-actions.git', vcs: 'git', parent })),
+    res,
+  )
+  assert.equal(res.statusCode, 200)
+  assert.equal(commands[0].args[2], join(parent, 'dsh-plugin-file-actions'))
+})
+
+test('clone refuses URLs that could ride the command line as options', async () => {
+  const commands = []
+  const { seam } = win32Seam({
+    runCommand: async (command, args) => { commands.push({ command, args }) },
+  })
+  const routes = await routesWith(seam)
+  const parent = mkdtempSync(join(tmpdir(), 'fa-clone-'))
+  for (const url of ['--upload-pack=evil', 'https://x/y.git -o Proxy', 'https://host/repo', '', 'x'.repeat(3000)]) {
+    const res = mockRes()
+    await routes.get('/api/file-actions/clone')(mockReq('POST', JSON.stringify({ url, vcs: 'git', parent })), res)
+    assert.equal(res.statusCode, 400, url)
+    assert.equal(JSON.parse(res.body).code, 'bad-url', url)
+  }
+  assert.deepEqual(commands, [], 'no VCS command may run for refused URLs')
+})
+
+test('clone answers target-exists and validates the parent directory', async () => {
+  const commands = []
+  const { seam } = win32Seam({
+    runCommand: async (command, args) => { commands.push({ command, args }) },
+  })
+  const routes = await routesWith(seam)
+  const parent = mkdtempSync(join(tmpdir(), 'fa-clone-'))
+  // A pre-existing ./Repo collides with the derived name.
+  writeFileSync(join(parent, 'Repo'), 'x')
+  const exists = mockRes()
+  await routes.get('/api/file-actions/clone')(
+    mockReq('POST', JSON.stringify({ url: 'https://github.com/u/Repo.git', vcs: 'git', parent })),
+    exists,
+  )
+  assert.equal(exists.statusCode, 409)
+  assert.equal(JSON.parse(exists.body).code, 'target-exists')
+
+  const relative = mockRes()
+  await routes.get('/api/file-actions/clone')(
+    mockReq('POST', JSON.stringify({ url: 'https://github.com/u/Repo.git', vcs: 'git', parent: 'rel/x' })),
+    relative,
+  )
+  assert.equal(relative.statusCode, 400)
+
+  const missing = mockRes()
+  await routes.get('/api/file-actions/clone')(
+    mockReq('POST', JSON.stringify({ url: 'https://github.com/u/Repo.git', vcs: 'git', parent: '/no/such/dir' })),
+    missing,
+  )
+  assert.equal(missing.statusCode, 404)
+  assert.deepEqual(commands, [])
+})
+
+test('clone answers 502 when the VCS command fails', async () => {
+  const { seam } = win32Seam({
+    runCommand: async () => { throw new Error('network down') },
+  })
+  const routes = await routesWith(seam)
+  const parent = mkdtempSync(join(tmpdir(), 'fa-clone-'))
+  const res = mockRes()
+  await routes.get('/api/file-actions/clone')(
+    mockReq('POST', JSON.stringify({ url: 'https://github.com/u/Repo.git', vcs: 'git', parent })),
+    res,
+  )
+  assert.equal(res.statusCode, 502)
+  assert.equal(JSON.parse(res.body).code, 'clone-failed')
 })
 
 test('loads the official resolver bundle from the installed dependency', async () => {

@@ -31,6 +31,7 @@ function makeElement(tagName, attrs = {}, parent = null) {
       child.parentElement = this
       return child
     },
+    click() { /* the mailto hand-off anchor; the stub only needs the call */ },
     closest(selector) {
       let node = this
       while (node !== null) {
@@ -84,6 +85,10 @@ function matches(element, selector) {
       && element.attrs['title'] !== undefined && element.attrs['title'] !== ''
       && element.attrs['data-ref-chip'] === undefined
   }
+  if (selector === 'a[href]') {
+    return element.tagName === 'A' && element.attrs['href'] !== undefined && element.attrs['href'] !== ''
+  }
+  if (selector === 'code') return element.tagName === 'CODE'
   const bare = selector.match(/^\[([a-z-]+)\]$/)
   if (bare !== null) return element.attrs[bare[1]] !== undefined
   throw new Error(`fake DOM does not implement selector: ${selector}`)
@@ -136,6 +141,7 @@ async function runTakeover({ wrappedChevron, filePath, cwd, fetch: fetchImpl } =
   const clipboard = []
   const listeners = {}
   const slots = []
+  const services = {}
   let registered
   const sandbox = {
     document: {
@@ -201,10 +207,13 @@ async function runTakeover({ wrappedChevron, filePath, cwd, fetch: fetchImpl } =
       inject: (key, callback) => { callback(); return () => {} },
       register: (options, component) => { slots.push({ options, component }); return () => {} },
     },
+    // The optional seats the URL menus consult per render (ctx.get with an
+    // undefined check); tests install entries to light capabilities up.
+    get: (name) => services[name],
     effect(fn) { fn() },
   })
   await new Promise((resolve) => setTimeout(resolve, 0))
-  return { fake, menus, clipboard, listeners, slots }
+  return { fake, menus, clipboard, listeners, slots, services }
 }
 
 function selectItem(menus, id) {
@@ -433,4 +442,120 @@ test('a right-click on a reference chip or a plain element keeps the native menu
   assert.equal(rightClick(listeners, chip), false, 'input-area reference chips are excluded')
   const plain = makeElement('button', { className: 'nyYjTG_open', title: 'src/app.py' })
   assert.equal(rightClick(listeners, plain), false, 'buttons without the fileMention class are excluded')
+})
+
+test('right-clicking a mailto link offers the copy and compose entries', async () => {
+  const { menus, listeners } = await runTakeover({ wrappedChevron: true })
+  const anchor = makeElement('a', { href: 'mailto:dev@example.com?subject=Hi' })
+  assert.equal(rightClick(listeners, anchor), true, 'the native menu is suppressed for mailto links')
+  const ids = contextMenu(menus).items.map((item) => item.id)
+  assert.deepEqual(Array.from(ids), ['fa:link:copy-email', 'fa:link:compose'])
+})
+
+test('copy-email takes the address and compose hands the full mailto to the browser', async () => {
+  const { menus, clipboard, listeners } = await runTakeover({ wrappedChevron: true })
+  const anchor = makeElement('a', { href: 'mailto:dev@example.com?subject=Hi' })
+  rightClick(listeners, anchor)
+  const menu = contextMenu(menus)
+  menu.onSelect('fa:link:copy-email')
+  assert.deepEqual(clipboard, ['dev@example.com'], 'only the address is copied, never the query')
+})
+
+test('right-clicking an http link offers copy, the built-in browser, and the system browser', async () => {
+  const { menus, listeners, services } = await runTakeover({ wrappedChevron: true })
+  const opened = []
+  services.sidebarRight = { openTab: (kind, options) => opened.push({ kind, options }) }
+  services.sidebarRightTabs = { get: (kind) => (kind === 'browser' ? {} : undefined) }
+  const anchor = makeElement('a', { href: 'https://example.com/docs' })
+  rightClick(listeners, anchor)
+  const ids = Array.from(contextMenu(menus).items.map((item) => item.id))
+  assert.deepEqual(ids, ['fa:link:copy', 'fa:link:browse', 'fa:link:external'])
+
+  contextMenu(menus).onSelect('fa:link:browse')
+  assert.equal(opened.length, 1, 'exactly one built-in browser open')
+  assert.equal(opened[0].kind, 'browser')
+  assert.equal(opened[0].options.params.url, 'https://example.com/docs',
+    'the built-in browser opens through the official sidebarRight service')
+})
+
+test('the built-in browser entry disappears when the deployment has no browser tab', async () => {
+  const { menus, listeners, services } = await runTakeover({ wrappedChevron: true })
+  services.sidebarRight = { openTab: () => {} }
+  services.sidebarRightTabs = { get: () => undefined }
+  const anchor = makeElement('a', { href: 'https://example.com/docs' })
+  rightClick(listeners, anchor)
+  const ids = Array.from(contextMenu(menus).items.map((item) => item.id))
+  assert.deepEqual(ids, ['fa:link:copy', 'fa:link:external'])
+})
+
+test('right-clicking a .git anchor or inline-code git URL offers the clone menu', async () => {
+  const { menus, listeners } = await runTakeover({ wrappedChevron: true })
+  const anchor = makeElement('a', { href: 'https://github.com/u/repo.git' })
+  rightClick(listeners, anchor)
+  assert.deepEqual(
+    Array.from(contextMenu(menus).items.map((item) => item.id)),
+    ['fa:link:copy', 'fa:link:clone'],
+    '.git https anchors classify as git',
+  )
+
+  const code = makeElement('code', {})
+  code.textContent = 'git@github.com:u/repo.git'
+  rightClick(listeners, code)
+  assert.deepEqual(
+    Array.from(contextMenu(menus).items.map((item) => item.id)),
+    ['fa:link:copy', 'fa:link:clone'],
+    'SCP URLs inside inline code classify as git',
+  )
+})
+
+test('clone-to picks the parent directory then posts the clone', async () => {
+  const posts = []
+  const { menus, listeners, services } = await runTakeover({
+    wrappedChevron: true,
+    fetch: makeFetch({ apps: [] }, posts),
+  })
+  services.remote = {
+    directoryPicker: { pick: async () => ({ ok: true, value: '/Users/theo/dev' }) },
+  }
+  const anchor = makeElement('a', { href: 'https://github.com/u/repo.git' })
+  rightClick(listeners, anchor)
+  const menu = contextMenu(menus)
+  const clone = menu.items.find((item) => item.id === 'fa:link:clone')
+  assert.equal(clone.disabled, false, 'the clone entry is live once the picker seat exists')
+  menu.onSelect('fa:link:clone')
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.deepEqual(posts, [
+    { url: '/api/file-actions/clone', body: { url: 'https://github.com/u/repo.git', vcs: 'git', parent: '/Users/theo/dev' } },
+  ])
+})
+
+test('cancelling the directory chooser closes the menu without cloning', async () => {
+  const posts = []
+  const { menus, listeners, services } = await runTakeover({
+    wrappedChevron: true,
+    fetch: makeFetch({ apps: [] }, posts),
+  })
+  services.remote = { directoryPicker: { pick: async () => ({ ok: true, value: null }) } }
+  const anchor = makeElement('a', { href: 'git@github.com:u/repo.git' })
+  rightClick(listeners, anchor)
+  contextMenu(menus).onSelect('fa:link:clone')
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.deepEqual(posts, [], 'a cancelled chooser never reaches the clone route')
+})
+
+test('the clone entry is disabled while the deployment has no directory picker', async () => {
+  const { menus, listeners } = await runTakeover({ wrappedChevron: true })
+  const anchor = makeElement('a', { href: 'https://github.com/u/repo.git' })
+  rightClick(listeners, anchor)
+  const clone = contextMenu(menus).items.find((item) => item.id === 'fa:link:clone')
+  assert.equal(clone.disabled, true, 'no picker seat, no live clone entry')
+})
+
+test('an svn URL in inline code offers the checkout menu', async () => {
+  const { menus, listeners } = await runTakeover({ wrappedChevron: true })
+  const code = makeElement('code', {})
+  code.textContent = 'svn+ssh://svn.example.com/repo/trunk'
+  rightClick(listeners, code)
+  const ids = Array.from(contextMenu(menus).items.map((item) => item.id))
+  assert.deepEqual(ids, ['fa:link:copy', 'fa:link:checkout'])
 })

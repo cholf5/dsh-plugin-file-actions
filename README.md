@@ -20,7 +20,8 @@
 - 🚀 **用探测到的编辑器/IDE 打开该文件** —— VS Code、Cursor、Sublime Text、JetBrains 全家桶等，每项带真实应用图标。应用探测与启动复用官方 `open-in-app` 的解析器：macOS 查 `.app` bundle，Windows 查注册表（App Paths / 卸载记录 / `%ProgramFiles%` 扫描），Linux 查 PATH 与 desktop entry。
 - 📂 **在文件管理器中打开所在文件夹** —— 访达（macOS）/ 文件资源管理器（Windows）/ 文件管理器（Linux），真实应用图标，走官方 `POST /open-in-app/open` 路由，与会话右上角下拉菜单完全一致。
 - ▶️ **在终端运行该文件** / **在终端打开所在目录** —— 跟随本机探测到的终端：macOS 的终端.app / Ghostty，Windows 的 Windows Terminal / Git Bash，Linux 的 GNOME Terminal / Konsole / Ghostty。
-- 🖱️ **会话消息里的文件链接同样可用** —— 右键点击消息中渲染的文件链接（文件提及 / markdown 文件链接，`title` 即路径），在光标处弹出同一份菜单；工作目录取当前查看会话的 `cwd`，相对路径按它解析。左键的官方预览行为不受影响。
+- 🖱️ **会话消息里的链接右键可用** —— 右键点击消息中渲染的文件链接（文件提及 / markdown 文件链接，`title` 即路径），在光标处弹出菜单；工作目录取当前查看会话的 `cwd`，相对路径按它解析。左键的官方预览行为不受影响。
+- 🔗 **按链接类型区分的右键菜单** —— `mailto:` 提供**复制邮箱地址 / 写邮件**；http(s) 链接提供**复制链接 / 在内置浏览器打开 / 在浏览器打开**（部署带内置浏览器 tab 时才出现，打开动作走官方 `sidebarRight` 服务）；git 仓库地址（`.git` 后缀、`git@host:path`、`git://`、`ssh://`，锚点或行内代码）提供**复制链接 / 克隆到…**；svn 地址（`svn://` 家族，行内代码）提供**复制链接 / 检出到…**。克隆/检出会先弹出官方目录选择器选父目录，再由 Host 以 argv 直传运行 `git clone` / `svn checkout`（无 shell，URL 先经严格校验——拒绝前导 `-`、空白与超长串，杜绝选项注入），目标目录取 URL 末段。
 
 > [!NOTE]
 > 官方卡片菜单原有的两项不再保留：「用默认应用打开」由探测到的编辑器列表覆盖（列出的应用本来就是常见默认应用，而默认应用具体是什么用户无从预知）；「在文件管理器中显示」并入上面的应用列表 —— 同款真实图标、同款官方路由。卡片菜单相对官方应用白名单的增量，只有两个复制路径。
@@ -127,6 +128,7 @@ Host 行接受：
           ts: tsx
         allowExecutableBit: true  # 未映射扩展名但带可执行位的文件也提供「运行」
         launchTimeoutMs: 10000    # 有界命令的截止时间，也是分离启动的观察窗口
+        cloneTimeoutMs: 120000    # 一次 git clone / svn checkout 的截止时间（网络操作，上限远高于启动观察）
 ```
 
 > [!WARNING]
@@ -149,6 +151,7 @@ Cordis 行 `file-actions` 在共享的已认证 `/api` 通道上注册三个精�
 | `GET /api/file-actions/info` | 注册探测 —— 返回 JSON body 即插件已加载 |
 | `POST /api/file-actions/launch` | 用官方解析器解析应用 → `launchResolved` 以文件为参数启动（missing-executable 时按官方语义重解析一次） |
 | `POST /api/file-actions/run` | 按下表构建终端命令并分离启动 |
+| `POST /api/file-actions/clone` | 校验仓库 URL（VCS 形态 + 选项注入筛查）→ argv 直传 `git clone` / `svn checkout` 到派生子目录 |
 
 终端适配（全部走官方 launcher 分离启动，凭据清洗过的环境变量，终端窗口比 dsh 活得久）：
 
@@ -179,6 +182,8 @@ MutationObserver 监视交付文件卡片（`[data-presented-file]`），读取�
 - **官方依赖精确锁版本。** Host 通过包清单定位 `@deepseek-ai/dsh-host-open-in-app` 的 `lib/types/resolver.js`（已发布 tarball 内含，并按版本尝试多种布局），依赖精确锁定在 `0.1.6-alpha.2`、不随 `dsh plugin update` 漂移；宿主 dsh 自带另一份解析库，两份可能的差异由客户端的双交集（官方探测 ∩ 插件解析）兜底。若未来版本改动布局，插件在启动时以 `file-actions:` 开头的明确错误失败，不会静默退化。
 - **增强读取 React fiber。** dsh 升级若改变了交付卡片内部结构，菜单可能不再出现（官方 chevron 自动恢复）；更新 fiber 探测与选择器即可恢复。
 - **右键菜单依赖官方文件链接的 DOM 形态。** 匹配条件是「`fileMention` hash 类 + `title` 即路径」的按钮；dsh 升级若改变 markdown 渲染（类名换名、路径改存他处），右键菜单会静默失效（普通右键原样保留），更新 `LINK_SELECTOR` 即可。侧边栏等非当前会话语境里的文件链接会按当前查看会话的 `cwd` 解析路径。
+- **URL 菜单只认官方渲染出来的链接。** 官方 sanitizer 只放行 http/https/mailto，所以 `svn://`、`git@` 仅以行内代码形态被识别（整段文本恰为仓库地址）；纯文本里裸写的 URL 没有可靠边界，不作为菜单目标。svn over http(s) 与普通网页无法区分，一律给 http 菜单。
+- **克隆写入宿主文件系统，方向上与「在终端运行该文件」同级。** URL 来自聊天文本，Host 以 argv 直传并先行拒绝可解析为选项的输入（前导 `-`）、空白与超长串；私有仓库在无缓存凭据时快速失败（`GIT_TERMINAL_PROMPT=0`），不会挂起有界命令。
 
 ## 🛠️ 开发
 

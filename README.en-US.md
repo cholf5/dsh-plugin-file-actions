@@ -41,6 +41,18 @@ in the DSH web GUI:
   workspace directory comes from the viewed session's `cwd`, which relative
   paths resolve against. The official left-click preview behavior is
   untouched.
+- 🔗 **Per-link-type right-click menus** — `mailto:` offers **copy email
+  address / compose email**; http(s) links offer **copy link / open in the
+  built-in browser / open in browser** (the built-in entry appears only when
+  the deployment ships the browser tab, opening through the official
+  `sidebarRight` service); git repository URLs (`.git` suffix, `git@host:path`,
+  `git://`, `ssh://` — as anchors or inline code) offer **copy link / clone
+  to…**; svn URLs (the `svn://` family, inline code) offer **copy link / check
+  out to…**. Clone/checkout first opens the official directory picker for the
+  parent directory, then the host runs `git clone` / `svn checkout` with argv
+  straight to the executable — no shell, and the URL is strictly validated
+  first (leading dashes, whitespace, and overlong strings are refused, closing
+  the option-injection door). The target directory is the URL's last segment.
 
 > [!NOTE]
 > The two original official card entries are not kept: "open with the default
@@ -180,6 +192,7 @@ The host row accepts:
           ts: tsx
         allowExecutableBit: true  # also offer "run" for unmapped extensions that carry an execute bit
         launchTimeoutMs: 10000    # deadline for bounded host commands, and the detached-launch watch window
+        cloneTimeoutMs: 120000    # deadline for one git clone / svn checkout (network-bound, ceiling far above the launch watch)
 ```
 
 > [!WARNING]
@@ -203,6 +216,7 @@ authenticated `/api` channel:
 | `GET /api/file-actions/info` | registration probe — a JSON body proves the plugin is loaded |
 | `POST /api/file-actions/launch` | resolve the app through the official resolver → `launchResolved` with the file path appended (one re-resolution on a missing executable, official semantics) |
 | `POST /api/file-actions/run` | build the terminal command per the table below and launch detached |
+| `POST /api/file-actions/clone` | validate the repository URL (VCS shape + option-injection screening) → argv `git clone` / `svn checkout` into the derived subdirectory |
 
 Terminal adapters (all spawned detached through the official launcher with a
 credential-scrubbed environment; the terminal outlives dsh):
@@ -281,6 +295,18 @@ consumes.
   right-clicks keep working); updating `LINK_SELECTOR` restores it. File links
   rendered outside the viewed session's context resolve their paths against
   the currently viewed session's `cwd`.
+- **URL menus only recognize what the official renderer links.** The official
+  sanitizer keeps only http/https/mailto hrefs, so `svn://` and `git@` URLs
+  are recognized in their inline-code form (the whole code text being the
+  repository URL); URLs bare in plain text have no reliable boundary and are
+  not menu targets. svn-over-http(s) is indistinguishable from a web page and
+  gets the http menu.
+- **Cloning writes to the host filesystem — the same trust tier as "run this
+  file in a terminal".** The URL comes from chat text; the host spawns argv
+  straight to the executable and first refuses anything that could parse as
+  an option (leading dash), holds whitespace, or is overlong. Private repos
+  fail fast instead of hanging the bounded command (`GIT_TERMINAL_PROMPT=0`);
+  cached credential helpers and agent keys keep working.
 
 ## 🛠️ Development
 
