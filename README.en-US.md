@@ -13,6 +13,16 @@ English · [简体中文](README.md)
 
 </div>
 
+## 🎬 Demo
+
+**File-card dropdown menu** — click the card's ▾: copy paths, open in an editor, the file manager, or a terminal
+
+[![File-card dropdown menu demo](docs/file-actions.gif)](docs/file-actions.gif)
+
+**In-session link context menu** — right-click a link in a message for a type-aware menu: file / `mailto:` / web / git / svn
+
+[![In-session link context menu demo](docs/link-actions.gif)](docs/link-actions.gif)
+
 ## ✨ Features
 
 A dual-face DeepSeek Harness plugin that extends the dropdown menu of every
@@ -208,7 +218,7 @@ The host row accepts:
 
 ### Host — `lib/index.js`
 
-The `file-actions` Cordis row registers three exact routes on the shared
+The `file-actions` Cordis row registers four exact routes on the shared
 authenticated `/api` channel:
 
 | Route | Behavior |
@@ -292,7 +302,7 @@ consumes.
   match condition is "the `fileMention` hashed class + the path in `title`" on
   a button; if a dsh upgrade changes the markdown rendering (class renamed,
   path moved elsewhere), the context menu silently stops appearing (plain
-  right-clicks keep working); updating `LINK_SELECTOR` restores it. File links
+  right-clicks keep working); updating `FILE_LINK_SELECTOR` restores it. File links
   rendered outside the viewed session's context resolve their paths against
   the currently viewed session's `cwd`.
 - **URL menus only recognize what the official renderer links.** The official
@@ -312,14 +322,19 @@ consumes.
 
 ```sh
 npm install
-node --test test/host.test.mjs test/client.test.mjs
+node --test
 ```
 
-Tests inject seams (resolver / launcher / runCommand / stat / platform) to cover the
+`node --test` discovers and runs all three test files under `test/`. The tests
+inject seams (resolver / launcher / runCommand / stat / platform) to cover the
 win32, linux, and darwin adapters deterministically on any development machine —
 including the execute-bit fallback that reads a POSIX mode (the stat seam fakes
 the mode, no chmod involved) — plus one integration test that loads the real
-official resolver library.
+official resolver library. `client-sweep.test.mjs` additionally drives the real
+`apply()` against a minimal fake DOM to regression-sweep the client half —
+covering the DOM-structure class of bugs a stubbed `require` cannot catch, such
+as the container having to land outside the official chevron's `span.menuAnchor`
+wrapper (0.1.6+ behavior), or the whole menu vanishes with its `display:none`.
 
 > [!TIP]
 > With a `link:` install, edits to `lib/client.js` hot-swap into the running

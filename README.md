@@ -12,6 +12,16 @@
 
 </div>
 
+## 🎬 演示
+
+**文件卡片下拉菜单** —— 点卡片上的 ▾：复制路径、用编辑器打开、文件管理器、在终端运行
+
+[![文件卡片下拉菜单演示](docs/file-actions.gif)](docs/file-actions.gif)
+
+**会话内超链接右键菜单** —— 在消息里右键一个链接，按链接类型弹出菜单：文件 / `mailto:` / 网页 / git / svn
+
+[![会话内超链接右键菜单演示](docs/link-actions.gif)](docs/link-actions.gif)
+
 ## ✨ 功能
 
 一个双面 DeepSeek Harness 插件，扩展 Web 界面里**交付文件卡片**（会话收尾列出的文件列表）的下拉菜单：
@@ -144,7 +154,7 @@ Host 行接受：
 
 ### Host —— `lib/index.js`
 
-Cordis 行 `file-actions` 在共享的已认证 `/api` 通道上注册三个精确路由：
+Cordis 行 `file-actions` 在共享的已认证 `/api` 通道上注册四个精确路由：
 
 | 路由 | 行为 |
 | --- | --- |
@@ -181,7 +191,7 @@ MutationObserver 监视交付文件卡片（`[data-presented-file]`），读取�
 - **Windows Terminal 的运行命令经 cmd 解释。** 命令字符串由 `cmd /k` 执行，配置值里的 cmd 元字符会被展开；`.sh` 等脚本建议在 Git Bash 终端里运行（其命令在 MSYS bash 上下文中执行）。Git Bash 的「运行」依赖完整 Git for Windows 安装自带的 mintty。
 - **官方依赖精确锁版本。** Host 通过包清单定位 `@deepseek-ai/dsh-host-open-in-app` 的 `lib/types/resolver.js`（已发布 tarball 内含，并按版本尝试多种布局），依赖精确锁定在 `0.1.6-alpha.2`、不随 `dsh plugin update` 漂移；宿主 dsh 自带另一份解析库，两份可能的差异由客户端的双交集（官方探测 ∩ 插件解析）兜底。若未来版本改动布局，插件在启动时以 `file-actions:` 开头的明确错误失败，不会静默退化。
 - **增强读取 React fiber。** dsh 升级若改变了交付卡片内部结构，菜单可能不再出现（官方 chevron 自动恢复）；更新 fiber 探测与选择器即可恢复。
-- **右键菜单依赖官方文件链接的 DOM 形态。** 匹配条件是「`fileMention` hash 类 + `title` 即路径」的按钮；dsh 升级若改变 markdown 渲染（类名换名、路径改存他处），右键菜单会静默失效（普通右键原样保留），更新 `LINK_SELECTOR` 即可。侧边栏等非当前会话语境里的文件链接会按当前查看会话的 `cwd` 解析路径。
+- **右键菜单依赖官方文件链接的 DOM 形态。** 匹配条件是「`fileMention` hash 类 + `title` 即路径」的按钮；dsh 升级若改变 markdown 渲染（类名换名、路径改存他处），右键菜单会静默失效（普通右键原样保留），更新 `FILE_LINK_SELECTOR` 即可。侧边栏等非当前会话语境里的文件链接会按当前查看会话的 `cwd` 解析路径。
 - **URL 菜单只认官方渲染出来的链接。** 官方 sanitizer 只放行 http/https/mailto，所以 `svn://`、`git@` 仅以行内代码形态被识别（整段文本恰为仓库地址）；纯文本里裸写的 URL 没有可靠边界，不作为菜单目标。svn over http(s) 与普通网页无法区分，一律给 http 菜单。
 - **克隆写入宿主文件系统，方向上与「在终端运行该文件」同级。** URL 来自聊天文本，Host 以 argv 直传并先行拒绝可解析为选项的输入（前导 `-`）、空白与超长串；私有仓库在无缓存凭据时快速失败（`GIT_TERMINAL_PROMPT=0`），不会挂起有界命令。
 
@@ -189,10 +199,10 @@ MutationObserver 监视交付文件卡片（`[data-presented-file]`），读取�
 
 ```sh
 npm install
-node --test test/host.test.mjs test/client.test.mjs
+node --test
 ```
 
-测试通过 seam 注入（resolver / launcher / runCommand / stat / platform），在任意开发机上确定性覆盖 win32 / linux / darwin 三套适配器 —— 包括只读 POSIX mode 的 execute-bit 回退（stat seam 伪造 mode，不依赖 chmod），另有一条真实加载官方解析库的集成测试。
+`node --test` 自动发现并运行 `test/` 下全部三个测试文件。测试通过 seam 注入（resolver / launcher / runCommand / stat / platform），在任意开发机上确定性覆盖 win32 / linux / darwin 三套适配器 —— 包括只读 POSIX mode 的 execute-bit 回退（stat seam 伪造 mode，不依赖 chmod），另有一条真实加载官方解析库的集成测试。`client-sweep.test.mjs` 再用最小假 DOM 驱动真实的 `apply()` 对客户端半边做回归扫描 —— 覆盖 stub `require` 抓不到的 DOM 结构类 bug，例如容器必须落在官方 chevron 的 `span.menuAnchor` 包裹之外（0.1.6+ 行为），否则整条菜单随 `display:none` 一起消失。
 
 > [!TIP]
 > 通过 `link:` 安装时，改动 `lib/client.js` 会热替换进运行中的 `dsh web`，无需重启；Host 半边的改动需要重启 —— 且 checkout 必须先 `npm install`（依赖从 checkout 的 `node_modules` 解析）。
