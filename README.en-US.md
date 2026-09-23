@@ -10,8 +10,11 @@ English · [简体中文](README.md)
 [![License: MIT](https://img.shields.io/github/license/cholf5/dsh-plugin-file-actions?style=flat-square)](./LICENSE)
 [![Platform: macOS | Windows | Linux](https://img.shields.io/badge/platform-macOS_%7C_Windows_%7C_Linux-black?style=flat-square)](#-known-limitations)
 [![DeepSeek Harness plugin](https://img.shields.io/badge/DeepSeek_Harness-web_plugin-blueviolet?style=flat-square)](https://github.com/deepseek-ai/deepseek-harness)
+![Verified: dsh 0.1.7-alpha.2](https://img.shields.io/badge/verified-dsh%200.1.7--alpha.2-blue?style=flat-square)
 
 </div>
+
+Verified against `@deepseek-ai/dsh@0.1.7-alpha.2`.
 
 ## 🎬 Demo
 
