@@ -23,12 +23,19 @@ test('bundle registers under the package id with an apply export', () => {
         return {
           Menu: stubComponent('Menu'),
           writeClipboard: () => Promise.resolve(true),
-          IconChevronDownOutline14: stubComponent('Chevron'),
-          IconRightUpOutline16: stubComponent('RightUp'),
-          IconFolderOpenOutline16: stubComponent('Folder'),
-          IconCopyOutline16: stubComponent('Copy'),
-          IconCheckOutline16: stubComponent('Check'),
-          IconCodeOutline16: stubComponent('Code'),
+          // Current dsh (0.1.7+) stroke-weight export names; the bundle's icon
+          // aliases resolve these first and fall back to the legacy numeric
+          // names — client-sweep.test.mjs stubs those to cover that branch.
+          IconChevronDownOutlineRegular: stubComponent('Chevron'),
+          IconRightUpOutlineRegular: stubComponent('RightUp'),
+          IconFolderOpenOutlineRegular: stubComponent('Folder'),
+          IconCopyOutlineRegular: stubComponent('Copy'),
+          IconCheckOutlineRegular: stubComponent('Check'),
+          IconCodeOutlineRegular: stubComponent('Code'),
+          IconLinkOutlineRegular: stubComponent('Link'),
+          IconBrowseOutlineRegular: stubComponent('Browse'),
+          IconSendOutlineRegular: stubComponent('Send'),
+          IconDownloadOutlineRegular: stubComponent('Download'),
         }
       }
       throw new Error(`unexpected module request: ${specifier}`)

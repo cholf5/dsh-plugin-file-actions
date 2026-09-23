@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-file-actions",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Extends the presented-file card menu in the DSH web GUI on macOS, Windows, and Linux: copy relative/absolute path, open the file in detected editors (VS Code, Sublime Text, Rider, ...), open its folder in the platform file manager (Finder/Explorer), and run it in a terminal or open its directory. Right-click (long-press on touch) over session-message links opens type-aware menus: file paths, mailto, http(s) (built-in/system browser), and git/svn clone-to with the official directory picker. App resolution reuses the official open-in-app catalog resolver; visibility follows the official open-in-app probe; icons come from the official icon route.",
   "license": "MIT",
   "author": "cholf5 <cholf5@hotmail.com>",

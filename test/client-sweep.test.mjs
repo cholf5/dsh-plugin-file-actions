@@ -197,6 +197,9 @@ async function runTakeover({ wrappedChevron, filePath, cwd, fetch: fetchImpl, co
         return {
           Menu: function Menu(props) { menus.push(props); return null },
           writeClipboard: (value) => { clipboard.push(value); return Promise.resolve(true) },
+          // Legacy numeric icon names: deliberately exercises the pre-0.1.7
+          // fallback branch of the bundle's primitives icon aliases
+          // (client.test.mjs stubs the current Regular names).
           IconChevronDownOutline14: stubComponent('Chevron'), IconRightUpOutline16: stubComponent('RightUp'),
           IconFolderOpenOutline16: stubComponent('Folder'), IconCopyOutline16: stubComponent('Copy'),
           IconCheckOutline16: stubComponent('Check'), IconCodeOutline16: stubComponent('Code'),
