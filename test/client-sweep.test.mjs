@@ -328,15 +328,15 @@ function contextMenu(menus) {
   return menu
 }
 
-test('the card menu occupies the official deliverables seat, shadowing the shipped open-in-app cell', async () => {
+test('the card menu occupies the official deliverables seat beside the shipped open-in-app cell', async () => {
   const { slots, cardCell } = await bootPlugin()
   assert.notEqual(cardCell, undefined, 'the card menu registered on deliverables.file.actions')
-  assert.equal(cardCell.options.id, 'open-in-app',
-    'reusing the shipped id claims THAT cell — the slot ledger elects one winner per id')
-  assert.ok((cardCell.options.priority ?? 0) < 0,
-    'a lower priority shadows the official registration (default 0) — lowest renders')
+  assert.equal(cardCell.options.id, 'file-actions',
+    'a fresh id is added beside the shipped entries — the official cell keeps rendering')
+  assert.equal(cardCell.options.priority, undefined, 'no shadowing: the official control stays alive')
+  assert.equal(cardCell.options.order, 10, 'order 10 places the plugin cell after the official one')
   assert.equal(cardCell.options.locale, 'fileActions', 'the cell binds the plugin locale namespace')
-  const recorder = slots.find((entry) => entry.options.id === 'file-actions')
+  const recorder = slots.find((entry) => entry.options.name === 'conversation.session.header.utilities')
   assert.notEqual(recorder, undefined, 'the cwd recorder keeps its session-header utilities seat')
 })
 
@@ -348,6 +348,7 @@ test('the cell reads the file path through its mounted host inside the card', as
   const anchor = menu.anchor
   assert.equal(anchor.props['data-fa-trigger'], '1', 'the trigger carries the plugin marker')
   assert.equal(anchor.props['aria-haspopup'], 'menu', 'the trigger announces a menu')
+  assert.equal(anchor.props['aria-label'], 'moreActions', 'the trigger names itself through the locale')
   anchor.props.onClick()
   const opened = cardMenu(menus)
   assert.equal(opened.open, true, 'clicking the trigger opens the menu')
@@ -409,7 +410,7 @@ const fullInfo = {
   available: ['finder', 'vscode', 'terminal'],
 }
 
-test('the two official card entries are replaced by the official file-manager app entry', async () => {
+test('the card slot menu carries only terminal and copy sections — the official control owns the rest', async () => {
   const { menus, cardCell, react, fake } = await bootPlugin({
     filePath: 'src/app.py',
     fetch: makeFetch({ apps: ['finder', 'vscode', 'terminal'], info: fullInfo }),
@@ -417,63 +418,83 @@ test('the two official card entries are replaced by the official file-manager ap
   mountCard({ cardCell, react, fake, cwd: '/repo' })
   const menu = cardMenu(menus)
   const ids = menu.items.map((item) => item.id)
-  assert.ok(!ids.includes('fa:open'), 'the default-app entry is gone')
-  assert.ok(!ids.includes('fa:reveal'), 'the custom reveal entry is gone')
-  const editor = ids.indexOf('fa:app:vscode')
-  assert.equal(ids[0], 'fa:fm:finder', 'the file manager leads the menu — first in the official catalog order')
-  assert.ok(ids.indexOf('fa:fm:finder') < editor, 'the file manager precedes the editors')
-  assert.equal(ids.indexOf('fa:sep-copies'), ids.length - 3, 'a separator stands before the copy entries')
-  // Array.from copies the VM-realm array into a host one — deepStrictEqual
-  // compares prototypes, and a vm-created array fails it against a literal.
-  assert.deepEqual(Array.from(ids.slice(-2)), ['fa:copy-rel', 'fa:copy-abs'], 'the copy entries close the menu')
+  assert.ok(!ids.includes('fa:open'), 'the default-app entry stays gone (official main button owns it)')
+  assert.ok(!ids.includes('fa:reveal'), 'the custom reveal entry stays gone (official reveal owns it)')
+  assert.ok(!ids.some((id) => id.startsWith('fa:fm:')), 'no file-manager rows — the official reveal covers them')
+  assert.ok(!ids.some((id) => id.startsWith('fa:app:')), 'no editor rows — the official association list covers them')
+  assert.deepEqual(
+    Array.from(ids),
+    ['fa:term:terminal', 'fa:sep-copies', 'fa:copy-rel', 'fa:copy-abs'],
+    'terminals lead, a separator, then the copy entries close the menu',
+  )
 })
 
-test('the file manager appears once the official probe lands, before the plugin info', async () => {
+test('the slot menu shows only copies until the plugin info lands, then terminal rows appear', async () => {
   const { menus, cardCell, react, fake } = await bootPlugin({
-    fetch: makeFetch({ apps: ['finder'] }),
-  })
-  mountCard({ cardCell, react, fake, cwd: '/repo' })
-  const menu = cardMenu(menus)
-  const ids = menu.items.map((item) => item.id)
-  assert.ok(ids.includes('fa:fm:finder'), 'the file manager is gated on the official probe alone')
-  assert.ok(!ids.some((id) => id.startsWith('fa:app:') || id.startsWith('fa:term:')),
-    'editors/terminals still wait for the plugin info')
-})
-
-test('the menu enriches in place when the official probe lands after the cell mounted', async () => {
-  const { menus, cardCell, react, fake } = await bootPlugin({
-    // A deferred probe: the fetch stays unanswered until the test releases it,
-    // so the cell is already mounted when the app entries arrive.
+    filePath: 'src/app.py',
+    // The apps probe answers immediately; the plugin info is deferred so the
+    // cell is already mounted when the terminal rows can be derived.
     fetch: async (url) => {
-      if (String(url).includes('/open-in-app/apps')) {
+      if (String(url).includes('/api/file-actions/info')) {
         await new Promise((resolve) => setTimeout(resolve, 5))
-        return { ok: true, status: 200, json: async () => ({ apps: ['finder'] }) }
+        return { ok: true, status: 200, json: async () => fullInfo }
+      }
+      if (String(url).includes('/open-in-app/apps')) {
+        return { ok: true, status: 200, json: async () => ({ apps: ['finder', 'vscode', 'terminal'] }) }
       }
       return { ok: false, status: 404, json: async () => null }
     },
   })
   mountCard({ cardCell, react, fake, cwd: '/repo' })
   const before = cardMenu(menus)
-  assert.ok(!before.items.some((item) => item.id.startsWith('fa:fm:')), 'no apps while the probe is unanswered')
-  // The official probe lands after the cell mounted: the shared-state
-  // subscription re-renders the mounted cell with the app entries.
+  assert.deepEqual(
+    Array.from(before.items.map((item) => item.id)),
+    ['fa:copy-rel', 'fa:copy-abs'],
+    'no terminal rows while the plugin info is unanswered — and no empty sections either',
+  )
+  // The info lands after the cell mounted: the shared-state subscription
+  // re-renders the mounted cell with the terminal rows.
   await new Promise((resolve) => setTimeout(resolve, 20))
   const after = cardMenu(menus)
-  assert.ok(after.items.some((item) => item.id === 'fa:fm:finder'), 'the file manager rows in without remounting')
+  assert.ok(after.items.some((item) => item.id === 'fa:term:terminal'), 'the terminal rows in without remounting')
 })
 
-test('selecting the file manager opens the containing directory through the official route', async () => {
+test('the message-link context menu keeps every section the card slot trims', async () => {
   const posts = []
-  const { menus, cardCell, react, fake } = await bootPlugin({
+  const { menus, listeners, slots, react } = await bootPlugin({
     filePath: 'src/app.py',
-    fetch: makeFetch({ apps: ['finder'], info: fullInfo }, posts),
+    fetch: makeFetch({ apps: ['finder', 'vscode', 'terminal'], info: fullInfo }, posts),
   })
-  mountCard({ cardCell, react, fake, cwd: '/repo' })
-  selectItem(menus, 'fa:fm:finder')
+  react.invoke(slots.find((entry) => entry.options.name === 'conversation.session.header.utilities').component, recorderProps)
+  const link = makeElement('button', { className: 'fileMention_uddqf_85', title: 'src/app.py' })
+  rightClick(listeners, link)
+  const menu = contextMenu(menus)
+  const ids = menu.items.map((item) => item.id)
+  assert.equal(ids[0], 'fa:fm:finder', 'the file manager leads — no official alternative on a message link')
+  assert.ok(ids.includes('fa:app:vscode'), 'editors stay on the link menu')
+  assert.ok(ids.includes('fa:term:terminal'), 'terminals stay on the link menu')
+  assert.equal(ids.indexOf('fa:sep-copies'), ids.length - 3, 'a separator stands before the copy entries')
+  assert.deepEqual(Array.from(ids.slice(-2)), ['fa:copy-rel', 'fa:copy-abs'], 'the copy entries close the menu')
+  // The trimmed sections still dispatch: selecting the file manager on the
+  // link menu opens the containing directory through the official route.
+  menu.onSelect('fa:fm:finder')
   await new Promise((resolve) => setTimeout(resolve, 0))
   assert.deepEqual(posts, [
     { url: '/open-in-app/open', body: { app: 'finder', path: '/repo/src' } },
   ], 'the official open route receives the file manager id and the file\'s directory')
+})
+
+test('the file manager appears once the official probe lands, before the plugin info (link menu)', async () => {
+  const { menus, listeners, slots, react } = await bootPlugin({
+    fetch: makeFetch({ apps: ['finder'] }),
+  })
+  react.invoke(slots.find((entry) => entry.options.name === 'conversation.session.header.utilities').component, recorderProps)
+  const link = makeElement('button', { className: 'fileMention_uddqf_85', title: 'src/app.py' })
+  rightClick(listeners, link)
+  const ids = contextMenu(menus).items.map((item) => item.id)
+  assert.ok(ids.includes('fa:fm:finder'), 'the file manager is gated on the official probe alone')
+  assert.ok(!ids.some((id) => id.startsWith('fa:app:') || id.startsWith('fa:term:')),
+    'editors/terminals still wait for the plugin info')
 })
 
 test('the cell degrades to nothing when the official card DOM drifted', async () => {
@@ -499,7 +520,7 @@ test('right-clicking a message file link opens the same menu anchored at the cur
   const { menus, listeners, slots, react } = await bootPlugin({
     fetch: makeFetch({ apps: ['finder', 'vscode'], info: fullInfo }),
   })
-  const cell = slots.find((entry) => entry.options.id === 'file-actions')
+  const cell = slots.find((entry) => entry.options.name === 'conversation.session.header.utilities')
   assert.notEqual(cell, undefined, 'the cwd recorder occupies the session-header utilities slot')
   react.invoke(cell.component, recorderProps)
   const link = makeElement('button', { className: 'fileMention_uddqf_85 fileLink_uddqf_59', title: 'src/app.py' })
@@ -522,7 +543,7 @@ test('an editor picked in the link context menu launches with the cwd-resolved a
   const { menus, listeners, slots, react } = await bootPlugin({
     fetch: makeFetch({ apps: ['finder', 'vscode'], info: fullInfo }, posts),
   })
-  react.invoke(slots.find((entry) => entry.options.id === 'file-actions').component, recorderProps)
+  react.invoke(slots.find((entry) => entry.options.name === 'conversation.session.header.utilities').component, recorderProps)
   const link = makeElement('button', { className: 'fileMention_uddqf_85', title: 'src/app.py' })
   rightClick(listeners, link)
   contextMenu(menus).onSelect('fa:app:vscode')
@@ -536,7 +557,7 @@ test('copy-relative from the link context menu strips the workspace root', async
   const { menus, clipboard, listeners, slots, react } = await bootPlugin({
     fetch: makeFetch({ apps: ['finder'] }),
   })
-  react.invoke(slots.find((entry) => entry.options.id === 'file-actions').component, recorderProps)
+  react.invoke(slots.find((entry) => entry.options.name === 'conversation.session.header.utilities').component, recorderProps)
   const link = makeElement('button', { className: 'fileMention_uddqf_85', title: '/repo/src/app.py' })
   rightClick(listeners, link)
   contextMenu(menus).onSelect('fa:copy-rel')

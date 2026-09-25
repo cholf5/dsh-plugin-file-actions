@@ -97,18 +97,20 @@ test('client context menu targets the official message file links', () => {
   assert.ok(source.includes('contextmenu'), 'a contextmenu delegation listener is registered')
 })
 
-test('the card menu occupies the official deliverables seat and shadows the shipped cell', () => {
+test('the card menu occupies the official deliverables seat beside the shipped cell', () => {
   const source = readFileSync(join(here, '../lib/client.js'), 'utf8')
   // dsh 0.1.7 removed the in-card chevron the plugin used to take over; the
-  // card now renders the deliverables.file.actions slot, whose shipped
-  // 'open-in-app' cell the plugin claims at a lower priority (the slot ledger
-  // elects the lowest-priority live entry per id cell).
+  // card now renders the deliverables.file.actions slot. The plugin registers
+  // its own cell (a fresh id is added beside the shipped entries) with order
+  // 10 so it renders after the official open-in-app control — coexistence,
+  // not replacement: the official side keeps default-app open, the OS
+  // association list, and reveal; the plugin contributes terminals + copies.
   assert.ok(source.includes("'deliverables.file.actions'"), 'the plugin registers on the official deliverables card seat')
-  assert.ok(source.includes("id: 'open-in-app'"), 'the plugin claims the shipped open-in-app cell')
-  assert.ok(source.includes('priority: -10'), 'a lower priority shadows the official registration')
+  assert.ok(source.includes("id: 'file-actions'"), 'a fresh id keeps the official open-in-app cell alive')
+  assert.ok(source.includes('order: 10'), 'order 10 places the plugin cell after the official one')
   assert.ok(
-    source.includes("'deliverables.review.file.actions'") === false,
-    'the review-tab seat stays official — the plugin cell would degrade to nothing there',
+    source.includes('priority:') === false,
+    'no priority shadowing — the official control must keep rendering',
   )
   assert.ok(
     source.includes("__reactFiber$") === false,
@@ -116,4 +118,10 @@ test('the card menu occupies the official deliverables seat and shadows the ship
   )
   assert.ok(source.includes("'button[title]'"), 'the workspace-resolved path is read from the card preview title')
   assert.ok(source.includes('[data-fa-trigger]'), 'the trigger styling rides the injected stylesheet')
+  // The slot menu trims the sections the official control already owns; the
+  // message-link context menu keeps every section.
+  assert.ok(source.includes("buildItems({ file: { path: path }, cwd: cwd }, state, props.t, { error: error }, 'slot')"),
+    'the card slot passes the slot mode to buildItems')
+  assert.ok(!source.includes("'fa:open'"), 'the default-app entry stays gone')
+  assert.ok(!source.includes("'fa:reveal'"), 'the custom reveal entry stays gone')
 })
