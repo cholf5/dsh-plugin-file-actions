@@ -4,7 +4,7 @@
   "name": "dsh-plugin-file-actions",
   "dshVersion": "0.1.7-alpha.2",
   "verifiedAt": "2026-09-26",
-  "pluginHead": "93139ec",
+  "pluginHead": "bb13068",
   "treeClean": true,
   "seams": [
     "resolver-official-lib-loading",
@@ -18,6 +18,7 @@
     "client:review-file-actions-seat-left-to-official",
     "client:card-path-via-preview-title",
     "client:right-click-file-link-title-selector",
+    "client:trigger-uses-official-chevron-affordance",
     "client:fake-dom-hook-runtime-apply-sweep"
   ],
   "verification": { "tests": true, "vmSmoke": true },
@@ -26,8 +27,9 @@
     "e104060 fix(client): occupy the official deliverables.file.actions seat, shadowing the shipped open-in-app cell (0.5.2)",
     "b2557f7 feat(client): coexist with the official card control — own id, terminals + copies only (0.5.2)",
     "133b338 feat(client): take over the official open-in-app card cell and absorb its rows (0.5.2)",
-    "93139ec docs: flip the card-menu docs back to replace-and-absorb, both languages"
+    "93139ec docs: flip the card-menu docs back to replace-and-absorb, both languages",
+    "bb13068 fix(client): restore the official chevron on the card menu trigger (0.5.2)"
   ],
   "tag": "verified-dsh/v0.1.7-alpha.2",
-  "note": "2026-09-26: the 0.5.1 marker was backfilled with tests only; the card takeover had silently died because dsh 0.1.7 removed the in-card chevron (delivered via the new deliverables.file.actions slot). e104060 restored the menu by shadowing the official cell; b2557f7 switched to coexistence (own id 'file-actions', order 10) beside it; 133b338 went back to replace-and-absorb at the owner's request — two dropdowns read as redundant — registering the shipped id 'open-in-app' at priority -10 and absorbing the official rows (default application, per-file OS association list read from the owner's authorized actionUrl, reveal) into the plugin's single dropdown ahead of its terminal + copy sections. Re-verified this run against the INSTALLED 0.1.7-alpha.2 artifacts, not only the source checkout: dsh-client-ui-slots entriesOfSlot keeps the first non-abdicated entry per id after sorting by (priority, order) and register() rejects a same-id collision only at the SAME priority, naming the shadowing remedy (\"lowest renders\"); dsh-client-ui-deliverables client.js hands the seat exactly { actionUrl: presentedFileUrl(sessionId, seq, index), available, pending, onAction }; dsh-client-ui-open-in-app client.js registers id 'open-in-app' with NO priority (= 0) on deliverables.file.actions and on deliverables.review.file.actions (the latter deliberately untouched); dsh-client-ui-deliverables present-open.ts answers GET actionUrl from sessionController.workspacePathApplications; dsh-native-command parseNativeFileApplications requires the embedded data:image/(png|svg+xml);base64 icon and the plugin's client-side guard is byte-identical to it. Seam slugs follow the seams pinned by test/. Ladder rungs liveProbe/clickTest stay open: the client half hot-swaps via HMR and the user refreshes + click-tests the card menu (host half unchanged, no restart needed). The live cookie probe was not run because the dsh web token is only printed to the launching terminal and this session must never restart that server."
+  "note": "2026-09-26: the 0.5.1 marker was backfilled with tests only; the card takeover had silently died because dsh 0.1.7 removed the in-card chevron (delivered via the new deliverables.file.actions slot). e104060 restored the menu by shadowing the official cell; b2557f7 switched to coexistence (own id 'file-actions', order 10) beside it; 133b338 went back to replace-and-absorb at the owner's request — two dropdowns read as redundant — registering the shipped id 'open-in-app' at priority -10 and absorbing the official rows (default application, per-file OS association list read from the owner's authorized actionUrl, reveal) into the plugin's single dropdown ahead of its terminal + copy sections. Re-verified this run against the INSTALLED 0.1.7-alpha.2 artifacts, not only the source checkout: dsh-client-ui-slots entriesOfSlot keeps the first non-abdicated entry per id after sorting by (priority, order) and register() rejects a same-id collision only at the SAME priority, naming the shadowing remedy (\"lowest renders\"); dsh-client-ui-deliverables client.js hands the seat exactly { actionUrl: presentedFileUrl(sessionId, seq, index), available, pending, onAction }; dsh-client-ui-open-in-app client.js registers id 'open-in-app' with NO priority (= 0) on deliverables.file.actions and on deliverables.review.file.actions (the latter deliberately untouched); dsh-client-ui-deliverables present-open.ts answers GET actionUrl from sessionController.workspacePathApplications; dsh-native-command parseNativeFileApplications requires the embedded data:image/(png|svg+xml);base64 icon and the plugin's client-side guard is byte-identical to it. Seam slugs follow the seams pinned by test/. 2026-09-26 (follow-up): bb13068 fixed the trigger affordance — the coexistence round had put IconCode there to distinguish the plugin's second cell, and IconCode's artwork is a literal `#`, so the card's single control read as a hash sign once the takeover landed; the official chevron is back (both icon-export spellings aliased) and the sweep now asserts the trigger's child by stub name (verified to fail with the code glyph restored). Ladder rungs liveProbe/clickTest stay open: the client half hot-swaps via HMR and the user refreshes + click-tests the card menu (host half unchanged, no restart needed). The live cookie probe was not run because the dsh web token is only printed to the launching terminal and this session must never restart that server."
 }
