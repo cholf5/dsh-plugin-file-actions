@@ -79,9 +79,62 @@ test('client menu carries the official file-manager ids and labels', () => {
   // The file manager launches through the official open route — the
   // session-header split button's exact call — never the plugin launch route.
   assert.ok(source.includes("'/open-in-app/open'"), 'file manager forwards to the official open route')
-  // The two replaced official card entries must not come back.
-  assert.ok(!source.includes("'fa:open'"), 'the default-app entry is removed')
-  assert.ok(!source.includes("'fa:reveal'"), 'the custom reveal entry is removed')
+  // The link context menu leads with the plugin's own file-manager catalog: it
+  // has no official control behind it, unlike the card.
+  assert.ok(source.includes("'fa:fm:'"), 'the link menu keeps its own file-manager rows')
+})
+
+test('the card menu shadows the shipped open-in-app cell and absorbs its rows', () => {
+  const source = readFileSync(join(here, '../lib/client.js'), 'utf8')
+  // dsh 0.1.7 removed the in-card chevron the plugin used to take over; the
+  // card now renders the deliverables.file.actions slot, and the official
+  // open-in-app cell occupies it. The plugin registers under that SAME id at a
+  // lower priority — the register guard's own shadowing remedy ("lowest
+  // renders") — so the ledger keeps this cell and the official FileRouteAction
+  // stops rendering: one dropdown per card, not two.
+  assert.ok(source.includes("'deliverables.file.actions'"), 'the plugin registers on the official deliverables card seat')
+  assert.ok(source.includes("id: 'open-in-app'"), 'the plugin takes the shipped cell id, so only one cell survives')
+  assert.ok(source.includes('priority: -10'), 'a lower priority shadows the official priority-0 cell')
+  assert.ok(source.includes('order: 10,') === false, 'no order: the priority decides the cell, not the position')
+  // What the official cell did is absorbed rather than merely deleted.
+  assert.ok(source.includes("'fa:open'"), 'the default-application row is absorbed into the plugin menu')
+  assert.ok(source.includes("'fa:reveal'"), 'the reveal row is absorbed into the plugin menu')
+  assert.ok(source.includes("'fa:osapp:'"), 'the per-file OS association rows are absorbed into the plugin menu')
+  assert.ok(source.includes('APP_ICON_DATA_URL_RE'), 'the embedded association icons are validated before rendering')
+  assert.ok(source.includes("present.open") === false || source.includes('props.actionUrl'),
+    'the association list is read from the owner-provided authorized route, never a hard-coded path')
+  assert.ok(source.includes('deps.onAction'), 'the absorbed rows dispatch through the seat contract')
+  assert.ok(
+    source.includes("__reactFiber$") === false,
+    'no fiber probing: the path is read through the mounted cell host, not React internals',
+  )
+  assert.ok(source.includes("'button[title]'"), 'the workspace-resolved path is read from the card preview title')
+  assert.ok(source.includes('[data-fa-trigger]'), 'the trigger styling rides the injected stylesheet')
+  // The slot menu now spans the absorbed official rows plus the plugin's own
+  // terminal and copy sections; the message-link context menu keeps every
+  // section including the plugin's editor catalog.
+  assert.ok(source.includes("'slot', {"), 'the card slot passes the seat contract into buildItems')
+  assert.ok(source.includes('function absorbedRows('), 'the absorbed official rows are built in one place')
+})
+
+test('the association icon guard mirrors the official native-file-application contract', () => {
+  const source = readFileSync(join(here, '../lib/client.js'), 'utf8')
+  // Byte-for-byte the guard the running @deepseek-ai/dsh-native-command
+  // ships in parseNativeFileApplications (verified against the installed
+  // 0.1.7-alpha.2 copy): the association route embeds each app icon inline, so
+  // the client half is the only thing standing between that payload and an
+  // <img src>. A future official change to the accepted form must be mirrored
+  // here rather than silently widening what this menu will render.
+  assert.ok(
+    source.includes('/^data:image\\/(?:png|svg\\+xml);base64,[A-Za-z0-9+/=]+$/'),
+    'the embedded-icon guard matches the official parseNativeFileApplications contract exactly',
+  )
+  for (const key of ['openWithDefault', 'openWithApp', 'appDefault', 'revealFile']) {
+    assert.ok(source.includes(`'${key}':`), `missing the absorbed-row locale label ${key}`)
+  }
+  for (const key of ['error.appsUnavailable', 'error.openFailed', 'error.revealFailed']) {
+    assert.ok(source.includes(`'${key}':`), `missing the absorbed-row failure label ${key}`)
+  }
 })
 
 test('client context menu targets the official message file links', () => {
@@ -95,33 +148,4 @@ test('client context menu targets the official message file links', () => {
     'the right-click delegation matches the official file-link buttons and excludes the input-area reference chips',
   )
   assert.ok(source.includes('contextmenu'), 'a contextmenu delegation listener is registered')
-})
-
-test('the card menu occupies the official deliverables seat beside the shipped cell', () => {
-  const source = readFileSync(join(here, '../lib/client.js'), 'utf8')
-  // dsh 0.1.7 removed the in-card chevron the plugin used to take over; the
-  // card now renders the deliverables.file.actions slot. The plugin registers
-  // its own cell (a fresh id is added beside the shipped entries) with order
-  // 10 so it renders after the official open-in-app control — coexistence,
-  // not replacement: the official side keeps default-app open, the OS
-  // association list, and reveal; the plugin contributes terminals + copies.
-  assert.ok(source.includes("'deliverables.file.actions'"), 'the plugin registers on the official deliverables card seat')
-  assert.ok(source.includes("id: 'file-actions'"), 'a fresh id keeps the official open-in-app cell alive')
-  assert.ok(source.includes('order: 10'), 'order 10 places the plugin cell after the official one')
-  assert.ok(
-    source.includes('priority:') === false,
-    'no priority shadowing — the official control must keep rendering',
-  )
-  assert.ok(
-    source.includes("__reactFiber$") === false,
-    'no fiber probing: the path is read through the mounted cell host, not React internals',
-  )
-  assert.ok(source.includes("'button[title]'"), 'the workspace-resolved path is read from the card preview title')
-  assert.ok(source.includes('[data-fa-trigger]'), 'the trigger styling rides the injected stylesheet')
-  // The slot menu trims the sections the official control already owns; the
-  // message-link context menu keeps every section.
-  assert.ok(source.includes("buildItems({ file: { path: path }, cwd: cwd }, state, props.t, { error: error }, 'slot')"),
-    'the card slot passes the slot mode to buildItems')
-  assert.ok(!source.includes("'fa:open'"), 'the default-app entry stays gone')
-  assert.ok(!source.includes("'fa:reveal'"), 'the custom reveal entry stays gone')
 })

@@ -1,9 +1,12 @@
 // Slot-cell sweep against a minimal fake DOM and a tiny hook runtime: proves
-// the card menu occupies the official deliverables.file.actions seat (0.1.7
+// the card menu TAKES OVER the official deliverables.file.actions seat (0.1.7
 // contributed-actions architecture — the card no longer ships a chevron to
-// take over), reads the file path through its mounted host, and degrades to
-// nothing when the official DOM drifts. The stubbed require cannot catch this
-// class of bug; the fake DOM drives the real apply() and cell component.
+// take over) by registering under the shipped open-in-app id at a lower
+// priority, absorbs that cell's own rows (default application, per-file OS
+// association list, reveal) through the seat's onAction, reads the file path
+// through its mounted host, and degrades to nothing when the official DOM
+// drifts. The stubbed require cannot catch this class of bug; the fake DOM
+// drives the real apply() and cell component.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
@@ -12,6 +15,15 @@ import { fileURLToPath } from 'node:url'
 import vm from 'node:vm'
 
 const here = dirname(fileURLToPath(import.meta.url))
+
+/** The owner-provided authorized route the seat hands the cell. */
+const ACTION_URL = 'api/present.open?sessionId=s1&seq=3&index=0'
+
+/** One association response: the OS list with the desktop's embedded icons. */
+const nativeApps = [
+  { id: 'preview', name: 'Preview', default: true, icon: 'data:image/png;base64,AAAA' },
+  { id: 'vscode', name: 'Visual Studio Code', default: false, icon: null },
+]
 
 const stubComponent = (name) => function Stub() { return null }
 
@@ -99,13 +111,26 @@ function makeEnvironment({ filePath = 'src/app.py', titledPreview = true } = {})
   return { documentElement, card, preview, fileBody, actions, slotHost }
 }
 
-/** A fetch stub answering the plugin's GET probes and capturing its POSTs. */
-function makeFetch({ apps, info } = {}, posts = []) {
-  return async (url, options) => {
+/**
+ * A fetch stub answering the plugin's GET probes and capturing its POSTs. Every
+ * non-POST route it was asked for lands on `impl.gets`, so a test can prove
+ * which authorized route the association read actually addressed.
+ */
+function makeFetch({ apps, info, native, nativeStatus = 200 } = {}, posts = []) {
+  const gets = []
+  const impl = async (url, options) => {
     const target = String(url)
     if (options !== undefined && options.method === 'POST') {
       posts.push({ url: target, body: JSON.parse(options.body) })
       return { ok: true, status: 200, json: async () => ({ ok: true }) }
+    }
+    gets.push(target)
+    if (target.includes('present.open')) {
+      // The owner's authorized per-file action route: its GET answers the OS
+      // association list, its POST opens/reveals (that one is onAction's job).
+      return native === undefined
+        ? { ok: false, status: nativeStatus, json: async () => null }
+        : { ok: true, status: 200, json: async () => native }
     }
     if (target.includes('/open-in-app/apps')) {
       return apps === undefined
@@ -119,6 +144,8 @@ function makeFetch({ apps, info } = {}, posts = []) {
     }
     return { ok: false, status: 404, json: async () => null }
   }
+  impl.gets = gets
+  return impl
 }
 
 /**
@@ -295,19 +322,44 @@ async function bootPlugin({ filePath, titledPreview, fetch: fetchImpl, coarse = 
   })
   await new Promise((resolve) => setTimeout(resolve, 0))
   const cardCell = slots.find((entry) => entry.options.name === 'deliverables.file.actions')
-  return { fake, menus, clipboard, listeners, slots, services, cardCell, react }
+  return { fake, menus, clipboard, listeners, slots, services, cardCell, react, fetch: fetchImpl }
 }
 
-/** Mount the card cell the way the slots runtime would: standard session
- * props from the owning session, the plugin-namespace t, the cell host inside
- * the card. Returns the hook frame (output, invocations). */
-function mountCard({ cardCell, react, fake, cwd, sessionId = 's1' }) {
+/**
+ * Mount the card cell the way the slots runtime would: standard session props
+ * from the owning session plus the seat's owner contract (the authorized
+ * actionUrl, desktop availability, the owner's pending flag, and onAction).
+ * The cell host sits inside the card. Returns the hook frame.
+ */
+function mountCard({
+  cardCell, react, fake, cwd, sessionId = 's1',
+  available = true, pending = false, actionUrl = ACTION_URL, onAction = async () => null,
+}) {
   assert.notEqual(cardCell, undefined, 'the card menu cell registered on the official deliverables seat')
   return react.mount(cardCell.component, {
     sessionId,
     useSessions: (selector) => selector({ byId: { [sessionId]: cwd === undefined ? undefined : { cwd } } }),
     t: (key) => key,
+    actionUrl,
+    available,
+    pending,
+    onAction,
   }, fake.slotHost)
+}
+
+/** Mount and let the association read land, returning the settled menu. */
+async function mountSettledCard(options = {}) {
+  const booted = await bootPlugin(options)
+  mountCard({
+    ...booted,
+    cwd: options.cwd ?? '/repo',
+    ...(options.available === undefined ? {} : { available: options.available }),
+    ...(options.pending === undefined ? {} : { pending: options.pending }),
+    ...(options.actionUrl === undefined ? {} : { actionUrl: options.actionUrl }),
+    ...(options.onAction === undefined ? {} : { onAction: options.onAction }),
+  })
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  return booted
 }
 
 function selectItem(menus, id) {
@@ -328,16 +380,19 @@ function contextMenu(menus) {
   return menu
 }
 
-test('the card menu occupies the official deliverables seat beside the shipped open-in-app cell', async () => {
+test('the card menu shadows the shipped open-in-app cell on the deliverables seat', async () => {
   const { slots, cardCell } = await bootPlugin()
   assert.notEqual(cardCell, undefined, 'the card menu registered on deliverables.file.actions')
-  assert.equal(cardCell.options.id, 'file-actions',
-    'a fresh id is added beside the shipped entries — the official cell keeps rendering')
-  assert.equal(cardCell.options.priority, undefined, 'no shadowing: the official control stays alive')
-  assert.equal(cardCell.options.order, 10, 'order 10 places the plugin cell after the official one')
+  assert.equal(cardCell.options.id, 'open-in-app',
+    'the plugin registers under the shipped cell id, so the ledger keeps only one cell for it')
+  assert.equal(cardCell.options.priority, -10,
+    'a lower priority is the official shadowing remedy ("lowest renders") and beats the official priority 0')
+  assert.equal(cardCell.options.order, undefined, 'no order: the priority decides the cell, not the position')
   assert.equal(cardCell.options.locale, 'fileActions', 'the cell binds the plugin locale namespace')
   const recorder = slots.find((entry) => entry.options.name === 'conversation.session.header.utilities')
   assert.notEqual(recorder, undefined, 'the cwd recorder keeps its session-header utilities seat')
+  assert.equal(recorder.options.id, 'file-actions',
+    'the recorder keeps the fresh id: no other cell is shadowed and the auth-free cwd publish is uncontested')
 })
 
 test('the cell reads the file path through its mounted host inside the card', async () => {
@@ -410,34 +465,128 @@ const fullInfo = {
   available: ['finder', 'vscode', 'terminal'],
 }
 
-test('the card slot menu carries only terminal and copy sections — the official control owns the rest', async () => {
-  const { menus, cardCell, react, fake } = await bootPlugin({
+test('the card menu carries all five sections in one dropdown — official rows, terminals, copies', async () => {
+  const { menus, fetch } = await mountSettledCard({
     filePath: 'src/app.py',
-    fetch: makeFetch({ apps: ['finder', 'vscode', 'terminal'], info: fullInfo }),
+    fetch: makeFetch({ apps: ['finder', 'vscode', 'terminal'], info: fullInfo, native: nativeApps }),
   })
-  mountCard({ cardCell, react, fake, cwd: '/repo' })
   const menu = cardMenu(menus)
-  const ids = menu.items.map((item) => item.id)
-  assert.ok(!ids.includes('fa:open'), 'the default-app entry stays gone (official main button owns it)')
-  assert.ok(!ids.includes('fa:reveal'), 'the custom reveal entry stays gone (official reveal owns it)')
-  assert.ok(!ids.some((id) => id.startsWith('fa:fm:')), 'no file-manager rows — the official reveal covers them')
-  assert.ok(!ids.some((id) => id.startsWith('fa:app:')), 'no editor rows — the official association list covers them')
+  const ids = Array.from(menu.items.map((item) => item.id))
   assert.deepEqual(
-    Array.from(ids),
-    ['fa:term:terminal', 'fa:sep-copies', 'fa:copy-rel', 'fa:copy-abs'],
-    'terminals lead, a separator, then the copy entries close the menu',
+    ids,
+    [
+      'fa:open',
+      'fa:osapp:preview',
+      'fa:osapp:vscode',
+      'fa:reveal',
+      'fa:sep-terms',
+      'fa:term:terminal',
+      'fa:sep-copies',
+      'fa:copy-rel',
+      'fa:copy-abs',
+    ],
+    'the absorbed official rows lead, the terminal section follows, the copies close — one control per card',
   )
+  assert.ok(fetch.gets.includes(ACTION_URL), 'the association list came from the owner\'s own authorized actionUrl')
+  assert.ok(!ids.some((id) => id.startsWith('fa:fm:')),
+    'no file-manager rows: the absorbed reveal covers them on the card')
+  assert.ok(!ids.some((id) => id.startsWith('fa:app:')),
+    'no plugin editor rows: the absorbed OS association list covers them on the card')
 })
 
-test('the slot menu shows only copies until the plugin info lands, then terminal rows appear', async () => {
+test('the absorbed rows name the default application through the plugin dictionary', async () => {
+  const { menus } = await mountSettledCard({
+    filePath: 'src/app.py',
+    fetch: makeFetch({ native: nativeApps }),
+  })
+  const items = cardMenu(menus).items
+  const open = items.find((item) => item.id === 'fa:open')
+  assert.equal(open.label, 'openWithApp', 'a known default app puts its name in the default-open row')
+  assert.equal(open.disabled, false, 'a settled association leaves the default row live')
+  const preferred = items.find((item) => item.id === 'fa:osapp:preview')
+  assert.equal(preferred.label, 'appDefault', 'the default marker rides the association row (official copy)')
+  const other = items.find((item) => item.id === 'fa:osapp:vscode')
+  assert.equal(other.label, 'Visual Studio Code', 'a non-default app keeps the OS-provided name')
+  assert.equal(items.find((item) => item.id === 'fa:reveal').label, 'revealFile', 'reveal is localized by the plugin')
+})
+
+test('the default-open row degrades to the generic copy when no app is marked default', async () => {
+  const { menus } = await mountSettledCard({
+    filePath: 'src/app.py',
+    fetch: makeFetch({ native: [{ id: 'someapp', name: 'Some App', default: false, icon: null }] }),
+  })
+  const open = cardMenu(menus).items.find((item) => item.id === 'fa:open')
+  assert.equal(open.label, 'openWithDefault', 'no default marker, no name to promise — the generic row remains')
+})
+
+test('a failed association query keeps the default open and shows the official apps-error row', async () => {
+  const { menus } = await mountSettledCard({
+    filePath: 'src/app.py',
+    fetch: makeFetch({ nativeStatus: 500 }),
+  })
+  const items = cardMenu(menus).items
+  const ids = Array.from(items.map((item) => item.id))
+  assert.deepEqual(ids.slice(0, 3), ['fa:open', 'fa:osapp-error', 'fa:reveal'],
+    'the list could not be read; the row that says so replaces it, and reveal survives')
+  assert.equal(items.find((item) => item.id === 'fa:open').disabled, false,
+    'the owner still resolves the default itself — a failed list must not disable the open row')
+  assert.equal(items.find((item) => item.id === 'fa:osapp-error').label, 'error.appsUnavailable')
+})
+
+test('a malformed association body degrades to the apps-error row instead of throwing', async () => {
+  const { menus } = await mountSettledCard({
+    filePath: 'src/app.py',
+    // The official browser validator throws on a malformed list; this cell
+    // keeps the control alive and reports the same apps-error row.
+    fetch: makeFetch({ native: { not: 'a list' } }),
+  })
+  const ids = Array.from(cardMenu(menus).items.map((item) => item.id))
+  assert.deepEqual(ids.slice(0, 3), ['fa:open', 'fa:osapp-error', 'fa:reveal'])
+})
+
+test('the absorbed rows keep their place and gray out while the association list is in flight', async () => {
+  const base = makeFetch({ native: nativeApps })
   const { menus, cardCell, react, fake } = await bootPlugin({
     filePath: 'src/app.py',
-    // The apps probe answers immediately; the plugin info is deferred so the
-    // cell is already mounted when the terminal rows can be derived.
-    fetch: async (url) => {
+    // Hold only the association answer, so the cell is already mounted and
+    // painted when the list can arrive.
+    fetch: async (url, options) => {
+      if (String(url).includes('present.open')) await new Promise((resolve) => setTimeout(resolve, 5))
+      return base(url, options)
+    },
+  })
+  mountCard({ cardCell, react, fake, cwd: '/repo' })
+  const loading = cardMenu(menus).items
+  assert.deepEqual(
+    Array.from(loading.map((item) => item.id)),
+    ['fa:open', 'fa:reveal', 'fa:sep-copies', 'fa:copy-rel', 'fa:copy-abs'],
+    'no app rows before the list lands, but the open and reveal rows keep their place',
+  )
+  assert.equal(loading.find((item) => item.id === 'fa:open').disabled, true,
+    'the open row is gray while the owner\'s association read is in flight')
+  assert.equal(loading.find((item) => item.id === 'fa:reveal').disabled, true, 'reveal waits with it')
+  assert.equal(loading.find((item) => item.id === 'fa:copy-rel').disabled, undefined,
+    'the browser-side copy rows never wait on the network')
+
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  const settled = cardMenu(menus).items
+  assert.ok(settled.some((item) => item.id === 'fa:osapp:preview'), 'the list lands and the app rows appear in place')
+  assert.equal(settled.find((item) => item.id === 'fa:open').disabled, false, 'the open row wakes up')
+})
+
+test('the slot menu keeps the absorbed rows while the plugin info lands, then terminal rows appear', async () => {
+  const { menus, cardCell, react, fake } = await bootPlugin({
+    filePath: 'src/app.py',
+    // The apps probe and the association answer immediately; the plugin info is
+    // deferred so the cell is already mounted when the terminal rows can be
+    // derived.
+    fetch: async (url, options) => {
       if (String(url).includes('/api/file-actions/info')) {
         await new Promise((resolve) => setTimeout(resolve, 5))
         return { ok: true, status: 200, json: async () => fullInfo }
+      }
+      if (String(url).includes('present.open')) {
+        return { ok: true, status: 200, json: async () => nativeApps }
       }
       if (String(url).includes('/open-in-app/apps')) {
         return { ok: true, status: 200, json: async () => ({ apps: ['finder', 'vscode', 'terminal'] }) }
@@ -447,16 +596,132 @@ test('the slot menu shows only copies until the plugin info lands, then terminal
   })
   mountCard({ cardCell, react, fake, cwd: '/repo' })
   const before = cardMenu(menus)
-  assert.deepEqual(
-    Array.from(before.items.map((item) => item.id)),
-    ['fa:copy-rel', 'fa:copy-abs'],
-    'no terminal rows while the plugin info is unanswered — and no empty sections either',
-  )
+  const beforeIds = Array.from(before.items.map((item) => item.id))
+  assert.ok(beforeIds.includes('fa:open'), 'the absorbed rows are already there')
+  assert.ok(!beforeIds.some((id) => id.startsWith('fa:term:') || id.startsWith('fa:run:')),
+    'no terminal rows while the plugin info is unanswered — and no empty sections either')
   // The info lands after the cell mounted: the shared-state subscription
   // re-renders the mounted cell with the terminal rows.
   await new Promise((resolve) => setTimeout(resolve, 20))
   const after = cardMenu(menus)
   assert.ok(after.items.some((item) => item.id === 'fa:term:terminal'), 'the terminal rows in without remounting')
+})
+
+test('every absorbed row dispatches through the seat contract, never a plugin route', async () => {
+  const calls = []
+  const posts = []
+  const { menus, cardCell, react, fake } = await bootPlugin({
+    filePath: 'src/app.py',
+    fetch: makeFetch({ native: nativeApps }, posts),
+  })
+  mountCard({
+    cardCell, react, fake, cwd: '/repo',
+    onAction: async (action, application) => { calls.push([action, application]); return null },
+  })
+  await new Promise((resolve) => setTimeout(resolve, 0))
+
+  cardMenu(menus).onSelect('fa:open')
+  cardMenu(menus).onSelect('fa:osapp:vscode')
+  cardMenu(menus).onSelect('fa:reveal')
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.deepEqual(calls, [['open', undefined], ['open', 'vscode'], ['reveal', undefined]],
+    'the owner\'s authorized route carries the action and, for a chosen app, the OS application id')
+  assert.deepEqual(posts, [], 'none of them rides the plugin\'s own host routes')
+})
+
+test('an onAction failure code lands in the plugin error row, not an official toast', async () => {
+  const { menus, cardCell, react, fake } = await bootPlugin({
+    filePath: 'src/app.py',
+    fetch: makeFetch({ native: nativeApps }),
+  })
+  mountCard({ cardCell, react, fake, cwd: '/repo', onAction: async () => 'openError' })
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  cardMenu(menus).onSelect('fa:open')
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  const error = cardMenu(menus).items.find((item) => item.id === 'fa:error')
+  assert.equal(error.label, 'error.openFailed', 'the open failure is localized by the plugin dictionary')
+  assert.equal(error.disabled, true, 'the error row is informational')
+})
+
+test('a rejected onAction reports the same failure row instead of an unhandled rejection', async () => {
+  const { menus, cardCell, react, fake } = await bootPlugin({
+    filePath: 'src/app.py',
+    fetch: makeFetch({ native: nativeApps }),
+  })
+  mountCard({
+    cardCell, react, fake, cwd: '/repo',
+    onAction: async () => { throw new Error('the owner refused') },
+  })
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  cardMenu(menus).onSelect('fa:reveal')
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  const error = cardMenu(menus).items.find((item) => item.id === 'fa:error')
+  assert.equal(error.label, 'error.revealFailed', 'a rejected hand-off maps to the reveal failure copy')
+})
+
+test('an unavailable host desktop drops the absorbed rows and never queries the association route', async () => {
+  const { menus, fetch: impl } = await mountSettledCard({
+    filePath: 'src/app.py',
+    available: false,
+    fetch: makeFetch({ apps: ['finder', 'terminal'], info: fullInfo, native: nativeApps }),
+  })
+  const ids = Array.from(cardMenu(menus).items.map((item) => item.id))
+  assert.deepEqual(ids, ['fa:term:terminal', 'fa:sep-copies', 'fa:copy-rel', 'fa:copy-abs'],
+    'no desktop, no official rows — the terminal and copy sections carry the card alone')
+  assert.ok(!impl.gets.some((url) => url.includes('present.open')),
+    'a Host that cannot open files is never asked to enumerate applications')
+})
+
+test('the owner\'s pending flag grays the absorbed rows while the copies stay live', async () => {
+  const { menus } = await mountSettledCard({
+    filePath: 'src/app.py',
+    pending: true,
+    fetch: makeFetch({ native: nativeApps }),
+  })
+  const items = cardMenu(menus).items
+  assert.equal(items.find((item) => item.id === 'fa:open').disabled, true, 'the default row waits for the owner')
+  assert.equal(items.find((item) => item.id === 'fa:osapp:preview').disabled, true, 'so do the association rows')
+  assert.equal(items.find((item) => item.id === 'fa:reveal').disabled, true, 'and reveal')
+  assert.equal(items.find((item) => item.id === 'fa:copy-abs').disabled, undefined,
+    'the browser-side copies are never blocked by a native hand-off')
+})
+
+test('an owner that hands over no actionUrl reports the apps-error row instead of loading forever', async () => {
+  const { menus } = await mountSettledCard({
+    filePath: 'src/app.py',
+    actionUrl: '',
+    fetch: makeFetch({ native: nativeApps }),
+  })
+  const items = cardMenu(menus).items
+  assert.deepEqual(
+    Array.from(items.map((item) => item.id)).slice(0, 3),
+    ['fa:open', 'fa:osapp-error', 'fa:reveal'],
+    'no route to ask, so the list is reported unavailable — never a permanently grayed menu',
+  )
+  assert.equal(items.find((item) => item.id === 'fa:open').disabled, false, 'the owner still opens the default itself')
+})
+
+test('association rows carry the desktop\'s embedded icon and sanitize a hostile one', async () => {
+  const { menus } = await mountSettledCard({
+    filePath: 'src/app.py',
+    fetch: makeFetch({
+      native: [
+        { id: 'evil', name: 'Evil', default: false, icon: 'javascript:alert(1)' },
+        { id: 'plain', name: 'Plain' },
+        'not-an-object',
+      ],
+    }),
+  })
+  const items = cardMenu(menus).items
+  assert.deepEqual(
+    Array.from(items.map((item) => item.id)).slice(0, 4),
+    ['fa:open', 'fa:osapp:evil', 'fa:osapp:plain', 'fa:reveal'],
+    'entries without an id or name are dropped; the rest keep their row',
+  )
+  assert.equal(items.find((item) => item.id === 'fa:osapp:evil').icon.props.source, null,
+    'a non-data icon URL never reaches an img src — the generic glyph renders instead')
+  assert.equal(items.find((item) => item.id === 'fa:osapp:plain').icon.props.source, null,
+    'a missing icon field becomes null too')
 })
 
 test('the message-link context menu keeps every section the card slot trims', async () => {
