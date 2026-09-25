@@ -18,7 +18,7 @@ Verified against `@deepseek-ai/dsh@0.1.7-alpha.2`.
 
 ## 🎬 Demo
 
-**File-card dropdown menu** — click the card's ▾: copy paths, open in an editor, the file manager, or a terminal
+**File-card dropdown (beside the official control)** — since dsh 0.1.7 the card's actions are owned by the official split button (default app + OS association list + reveal); the plugin adds a ▾ to its right: run in a terminal, open the containing folder in a terminal, copy paths
 
 [![File-card dropdown menu demo](docs/file-actions.gif)](docs/file-actions.gif)
 
@@ -33,21 +33,25 @@ A dual-face DeepSeek Harness plugin that extends the dropdown menu of every
 in the DSH web GUI:
 
 - 📋 **Copy relative path** / **Copy absolute path** — one click each
-  (browser-side, every platform), closing the menu at the bottom.
+  (browser-side, every platform), closing the menu at the bottom. On both the
+  card menu and the link context menu.
 - 🚀 **Open the file in a detected editor or IDE** — VS Code, Cursor, Sublime
   Text, the JetBrains family, and more, each shown with its real application
   icon. Detection and launching reuse the official `open-in-app` resolver:
   macOS checks `.app` bundles, Windows checks the registry (`App Paths`,
   Uninstall records, `%ProgramFiles%` scans), Linux checks PATH names and
-  desktop entries.
+  desktop entries. **Link context menu only** (the card is covered by the
+  official OS association list).
 - 📂 **Open the containing folder in the file manager** — Finder (macOS) /
   File Explorer (Windows) / Files (Linux), with the real application icon,
   through the official `POST /open-in-app/open` route — exactly what the
-  session-header dropdown does.
+  session-header dropdown does. **Link context menu only** (the card is
+  covered by the official reveal).
 - ▶️ **Run this file in a terminal** / **Open its containing folder in a
   terminal** — a submenu per detected terminal: Terminal.app / Ghostty on
   macOS, Windows Terminal / Git Bash on Windows, GNOME Terminal / Konsole /
-  Ghostty on Linux.
+  Ghostty on Linux. On both surfaces — the official card actions have no
+  terminal capability.
 - 🖱️ **The same menu on the file links inside session messages** — right-click
   a file link rendered in a message (file mentions / markdown file links, the
   path rides in the `title`) and the same menu opens at the cursor. The
@@ -69,12 +73,15 @@ in the DSH web GUI:
   the option-injection door). The target directory is the URL's last segment.
 
 > [!NOTE]
-> The two original official card entries are not kept: "open with the default
-> application" is covered by the detected editor list (the listed apps are the
-> common default apps, and there is no way to predict what the default app
-> actually is), and "show in the file manager" moves into the application list
-> above — same real icon, same official route. Against the official app
-> whitelist, the card menu's only additions are the two copy-path entries.
+> Since dsh 0.1.7, "open in an editor" and "show in the file manager" cede the
+> card to the official control — the official side lists every application the
+> operating system associates with that exact file (macOS queries NSWorkspace,
+> Windows the registry, Linux desktop entries), with the default app marked and
+> real icons, which is more accurate than the plugin's fixed catalog. The
+> plugin's curated catalog survives on the **message-link context menu**, where
+> no official alternative exists. On the card the plugin contributes exactly
+> what the official control lacks — run in a terminal, open the containing
+> folder in a terminal, copy paths — with zero duplication.
 
 ## 🧩 How the application list is decided
 
@@ -207,7 +214,7 @@ Restart `dsh web` afterwards.
 | `pnpm was not found` (exit 127) | `npm install -g pnpm`, or use the manual fallback |
 | `ERR_PNPM_ADDING_TO_ROOT` | the `-w` flag was dropped |
 | Installed but the UI is unchanged | restart `dsh web` (bundle layers don't hot-reload), then refresh the page |
-| The extended menu never appears on cards | the card menu occupies the official `deliverables.file.actions` seat; if an upgrade renamed the seat/changed the shipped id, or the card DOM moved the title, the plugin renders nothing (degrade-invisible). Check the DevTools console first, then the known limitations for updating the seat registration |
+| The extended menu never appears on cards | the card menu occupies the official `deliverables.file.actions` seat; if an upgrade renamed the seat, or the card DOM moved the title, the plugin renders nothing (degrade-invisible). Check the DevTools console first, then the known limitations for updating the seat registration |
 | `dsh web` boot log shows a `file-actions:` error, or `Cannot find package '@deepseek-ai/dsh-host-open-in-app'` | the official dependency is missing or unresolvable — for `link:` installs run `npm install` inside the checkout; for npm/git installs reinstall with `dsh plugin --profile web update dsh-plugin-file-actions -w` |
 | An editor/terminal is missing from the menu | the app was not verified by BOTH the official probe and the plugin's own resolution (does it appear in the official split-button menu?) — both intersections must pass. The file manager follows the official probe alone: if the official split-button menu has it, the card menu will too |
 
@@ -271,22 +278,23 @@ open-in-app host.
 
 ### Client — `lib/client.js`
 
-The card menu mounts through the official slot system:
-`ctx.slots.inject('deliverables.file.actions', …)` registers the plugin's menu
-cell on the official `deliverables.file.actions` seat, **reusing the shipped id
-`'open-in-app'` at a lower `priority` so the official cell is shadowed** (the
-slot ledger elects the lowest-priority live entry per id cell — lowest
-renders). That is the sanctioned replacement under dsh 0.1.7's
-contributed-actions architecture, where the card no longer ships its own
-chevron menu. The file path no longer rides a React fiber: the cell renders
-inside the card, and after mount it reads the preview button's `title` (the
-workspace-resolved path) through its own host element via
-`closest('[data-presented-file]')`; `cwd` comes from the seat's standard props
-(`sessionId` + `useSessions`, the owning session). The menu keeps
-`side:'top'` (grows upward to dodge the viewport clamp); when the official
-probe or the plugin info lands after the cell mounted, the shared-state
-subscription fills the app rows in place. If the official DOM drifts (no
-readable path), the cell renders nothing instead of a dead button.
+The card menu mounts through the official slot system, **beside the official
+control**: `ctx.slots.inject('deliverables.file.actions', …)` registers the
+plugin's menu cell on the official `deliverables.file.actions` seat under its
+**own id `file-actions`** (a fresh id is added beside the shipped entries) with
+**`order: 10`** — no shadowing or replacement, so the official split button
+(default-app open, the per-file OS association list, reveal) keeps rendering
+and the plugin adds what it lacks: terminals and copy paths (`buildItems`' slot
+mode drops the sections that would duplicate the official control; the
+message-link context menu uses the full mode). The file path no longer rides a
+React fiber: the cell renders inside the card, and after mount it reads the
+preview button's `title` (the workspace-resolved path) through its own host
+element via `closest('[data-presented-file]')`; `cwd` comes from the seat's
+standard props (`sessionId` + `useSessions`, the owning session). The menu
+keeps `side:'top'` (grows upward to dodge the viewport clamp); when the plugin
+info lands after the cell mounted, the shared-state subscription fills the
+terminal rows in place. If the official DOM drifts (no readable path), the cell
+renders nothing instead of a dead button.
 
 The right-click menu is pure event delegation: a document-level `contextmenu`
 listener matches the file-link buttons the official markdown renders (file
@@ -340,11 +348,14 @@ guard and crashes the whole menu render.
   layout, the plugin fails loudly at activation with a `file-actions:` error
   instead of silently degrading.
 - **The card menu depends on the official seat and the card DOM shape.** The
-  menu occupies the official `deliverables.file.actions` seat (shadowing the
-  official open-in-app cell) and reads the path from the card preview button's
-  `title`; a dsh upgrade that renames the seat, changes the shipped id, or
-  moves the title elsewhere makes the card menu degrade to nothing or the
-  official control return — update the seat registration and `cardPathOf`.
+  menu occupies the official `deliverables.file.actions` seat under its own id
+  (beside the official control) and reads the path from the card preview
+  button's `title`; a dsh upgrade that renames the seat or moves the title
+  elsewhere makes the card menu degrade to nothing — update the seat
+  registration and `cardPathOf`. The card-side editor/file-manager sections are
+  covered by the official OS association list — if the official query misses an
+  editor installed without a file association, the plugin's curated catalog on
+  the link context menu remains the fallback.
 - **The right-click menu depends on the official file-link DOM shape.** The
   match condition is "the `fileMention` hashed class + the path in `title`" on
   a button; if a dsh upgrade changes the markdown rendering (class renamed,
@@ -380,10 +391,11 @@ the mode, no chmod involved) — plus one integration test that loads the real
 official resolver library. `client-sweep.test.mjs` additionally drives the real
 `apply()` and the card menu cell against a minimal fake DOM plus a tiny hook
 runtime to regression-sweep the client half — covering the structural bugs a
-stubbed `require` cannot catch, such as the seat registration having to shadow
-the official `open-in-app` cell, the path having to come from the card preview
-button's `title`, and the cell having to render nothing when the official DOM
-drifts.
+stubbed `require` cannot catch, such as the seat registration having to keep
+its own id (coexistence, never shadowing the official `open-in-app` cell), the
+card slot menu trimming to terminals + copies, the path having to come from the
+card preview button's `title`, and the cell having to render nothing when the
+official DOM drifts.
 
 > [!TIP]
 > With a `link:` install, edits to `lib/client.js` hot-swap into the running

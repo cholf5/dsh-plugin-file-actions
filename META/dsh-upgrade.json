@@ -4,14 +4,15 @@
   "name": "dsh-plugin-file-actions",
   "dshVersion": "0.1.7-alpha.2",
   "verifiedAt": "2026-09-26",
-  "pluginHead": "83e9dff",
+  "pluginHead": "c89ba75",
   "treeClean": true,
   "seams": [
     "resolver-official-lib-loading",
     "launcher-win32-linux-darwin-adapters",
     "runCommand-injection",
     "stat-posix-mode-execute-bit-fallback",
-    "client:slot-deliverables.file.actions-replace-open-in-app",
+    "client:slot-deliverables.file.actions-coexist-beside-open-in-app",
+    "client:slot-menu-trims-to-terminals-and-copies",
     "client:card-path-via-preview-title",
     "client:right-click-file-link-title-selector",
     "client:fake-dom-hook-runtime-apply-sweep"
@@ -19,8 +20,10 @@
   "verification": { "tests": true, "vmSmoke": true },
   "fixCommits": [
     "e05bb83 fix: resolve primitives icons through dsh 0.1.7 stroke-weight aliases (0.5.1)",
-    "e104060 fix(client): occupy the official deliverables.file.actions seat, shadowing the shipped open-in-app cell (0.5.2)"
+    "e104060 fix(client): occupy the official deliverables.file.actions seat, shadowing the shipped open-in-app cell (0.5.2)",
+    "b2557f7 feat(client): coexist with the official card control — own id, terminals + copies only (0.5.2)"
   ],
   "tag": "verified-dsh/v0.1.7-alpha.2",
-  "note": "2026-09-26: the 0.5.1 marker was backfilled with tests only; the card takeover had silently died because dsh 0.1.7 removed the in-card chevron (delivered via the new deliverables.file.actions slot). Rewritten as a slot-cell registration shadowing the official open-in-app cell; this marker is earned, not backfilled. Seam slugs follow the seams pinned by test/. Ladder rungs liveProbe/clickTest stay open until the user refreshes and click-tests the card menu (client half hot-swaps via HMR; host half unchanged, no restart needed)."
+  "note": "2026-09-26: the 0.5.1 marker was backfilled with tests only; the card takeover had silently died because dsh 0.1.7 removed the in-card chevron (delivered via the new deliverables.file.actions slot). e104060 first restored the menu by shadowing the official cell; b2557f7 then switched to coexistence after a capability comparison — the official per-file OS association menu owns default-app open/associations/reveal, the plugin cell (own id 'file-actions', order 10) contributes terminals + copy paths, and the link context menu keeps the full catalog. Seam slugs follow the seams pinned by test/. Ladder rungs liveProbe/clickTest stay open until the user refreshes and click-tests the card menu (client half hot-swaps via HMR; host half unchanged, no restart needed)."
 }
+

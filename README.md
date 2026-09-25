@@ -17,7 +17,7 @@
 
 ## 🎬 演示
 
-**文件卡片下拉菜单** —— 点卡片上的 ▾：复制路径、用编辑器打开、文件管理器、在终端运行
+**文件卡片下拉菜单（与官方控件并排）** —— dsh 0.1.7 起，卡片动作由官方 split 按钮（默认应用 + OS 关联应用 + 在文件管理器中显示）负责，插件在其右侧补一枚 ▾：在终端运行、在终端打开所在目录、复制路径
 
 [![文件卡片下拉菜单演示](docs/file-actions.gif)](docs/file-actions.gif)
 
@@ -29,15 +29,16 @@
 
 一个双面 DeepSeek Harness 插件，扩展 Web 界面里**交付文件卡片**（会话收尾列出的文件列表）的下拉菜单：
 
-- 📋 **复制相对路径** / **复制绝对路径** —— 一次点击（纯浏览器侧，全平台），置于菜单底部收尾。
-- 🚀 **用探测到的编辑器/IDE 打开该文件** —— VS Code、Cursor、Sublime Text、JetBrains 全家桶等，每项带真实应用图标。应用探测与启动复用官方 `open-in-app` 的解析器：macOS 查 `.app` bundle，Windows 查注册表（App Paths / 卸载记录 / `%ProgramFiles%` 扫描），Linux 查 PATH 与 desktop entry。
-- 📂 **在文件管理器中打开所在文件夹** —— 访达（macOS）/ 文件资源管理器（Windows）/ 文件管理器（Linux），真实应用图标，走官方 `POST /open-in-app/open` 路由，与会话右上角下拉菜单完全一致。
-- ▶️ **在终端运行该文件** / **在终端打开所在目录** —— 跟随本机探测到的终端：macOS 的终端.app / Ghostty，Windows 的 Windows Terminal / Git Bash，Linux 的 GNOME Terminal / Konsole / Ghostty。
+- 📋 **复制相对路径** / **复制绝对路径** —— 一次点击（纯浏览器侧，全平台），置于菜单底部收尾。卡片菜单与右键菜单都有。
+- 🚀 **用探测到的编辑器/IDE 打开该文件** —— VS Code、Cursor、Sublime Text、JetBrains 全家桶等，每项带真实应用图标。应用探测与启动复用官方 `open-in-app` 的解析器：macOS 查 `.app` bundle，Windows 查注册表（App Paths / 卸载记录 / `%ProgramFiles%` 扫描），Linux 查 PATH 与 desktop entry。**右键菜单提供**（卡片上由官方 OS 关联列表覆盖）。
+- 📂 **在文件管理器中打开所在文件夹** —— 访达（macOS）/ 文件资源管理器（Windows）/ 文件管理器（Linux），真实应用图标，走官方 `POST /open-in-app/open` 路由，与会话右上角下拉菜单完全一致。**右键菜单提供**（卡片上由官方 reveal 覆盖）。
+- ▶️ **在终端运行该文件** / **在终端打开所在目录** —— 跟随本机探测到的终端：macOS 的终端.app / Ghostty，Windows 的 Windows Terminal / Git Bash，Linux 的 GNOME Terminal / Konsole / Ghostty。卡片菜单与右键菜单都有 —— 这是官方卡片动作没有的能力。
 - 🖱️ **会话消息里的链接右键可用** —— 右键点击消息中渲染的文件链接（文件提及 / markdown 文件链接，`title` 即路径），在光标处弹出菜单；工作目录取当前查看会话的 `cwd`，相对路径按它解析。左键的官方预览行为不受影响。触屏设备上长按同样可用（见下文「移动端」）。
 - 🔗 **按链接类型区分的右键菜单** —— `mailto:` 提供**复制邮箱地址 / 写邮件**；http(s) 链接提供**复制链接 / 在内置浏览器打开 / 在浏览器打开**（部署带内置浏览器 tab 时才出现，打开动作走官方 `sidebarRight` 服务）；git 仓库地址（`.git` 后缀、`git@host:path`、`git://`、`ssh://`，锚点或行内代码）提供**复制链接 / 克隆到…**；svn 地址（`svn://` 家族，行内代码）提供**复制链接 / 检出到…**。克隆/检出会先弹出官方目录选择器选父目录，再由 Host 以 argv 直传运行 `git clone` / `svn checkout`（无 shell，URL 先经严格校验——拒绝前导 `-`、空白与超长串，杜绝选项注入），目标目录取 URL 末段。
 
 > [!NOTE]
-> 官方卡片菜单原有的两项不再保留：「用默认应用打开」由探测到的编辑器列表覆盖（列出的应用本来就是常见默认应用，而默认应用具体是什么用户无从预知）；「在文件管理器中显示」并入上面的应用列表 —— 同款真实图标、同款官方路由。卡片菜单相对官方应用白名单的增量，只有两个复制路径。
+> [!NOTE]
+> dsh 0.1.7 起「用编辑器打开」与「在文件管理器中显示」从卡片菜单让位给官方控件 —— 官方按**操作系统真实文件关联**列出能打开该文件的全部应用（macOS 查 NSWorkspace、Windows 查注册表、Linux 查 desktop entry），带默认应用与真实图标，比插件的固定目录更准；插件的策划目录只在**右键链接菜单**里保留（那里没有官方替代）。卡片上插件只补官方没有的三件事：终端运行、终端打开目录、复制路径 —— 零重复。
 
 ## 🧩 应用列表如何决定
 
@@ -187,7 +188,7 @@ POSIX 终端在命令结束后保留交互 shell（对齐 Terminal.app 行为）
 
 ### Client —— `lib/client.js`
 
-交付卡片菜单以官方槽位的方式挂载：`ctx.slots.inject('deliverables.file.actions', …)` 在官方 `deliverables.file.actions` 席位上注册插件菜单单元格，并**复用官方发布 id `'open-in-app'`、以更低的 `priority` 影子掉官方单元格**（槽位账本在每个 id 单元格里选出优先级最低的存活注册者，低者优先渲染）—— 这是 dsh 0.1.7 contributed-actions 架构（卡片不再自带 chevron 菜单）下官方认可的替换方式。文件路径不走 React fiber：单元格渲染在卡片内部，挂载后经自身宿主元素 `closest('[data-presented-file]')` 读预览按钮的 `title`（即按工作目录解析过的路径）；`cwd` 来自席位标准 props（`sessionId` + `useSessions`，取交付所属会话）。菜单保持 `side:'top'` 向上展开避开视口钳位；官方探测与插件 info 在单元格挂载后才落地时，经共享状态订阅原地补全。若官方 DOM 漂移（读不到路径），单元格渲染为空，不残留死按钮。
+交付卡片菜单以官方槽位的方式**并排共存**：`ctx.slots.inject('deliverables.file.actions', …)` 在官方 `deliverables.file.actions` 席位上注册插件菜单单元格，用**自己的 id `file-actions`**（全新 id 会加在官方条目旁边）与 **`order: 10`** 排到官方 open-in-app 控件之后 —— 不做任何影子/替换，官方 split 按钮（默认应用 + OS 关联应用 + reveal）原样保留，插件补它没有的终端与复制项（`buildItems` 的 slot 模式裁掉会重复的编辑器/文件管理器段；右键链接菜单用完整模式）。文件路径不走 React fiber：单元格渲染在卡片内部，挂载后经自身宿主元素 `closest('[data-presented-file]')` 读预览按钮的 `title`（即按工作目录解析过的路径）；`cwd` 来自席位标准 props（`sessionId` + `useSessions`，取交付所属会话）。菜单保持 `side:'top'` 向上展开避开视口钳位；插件 info 在单元格挂载后才落地时，经共享状态订阅原地补全。若官方 DOM 漂移（读不到路径），单元格渲染为空，不残留死按钮。
 
 右键菜单走纯事件委托：`document` 级 `contextmenu` 监听匹配官方 markdown 渲染的文件链接按钮（文件提及与 markdown 文件链接共享同一个 hash 类，路径在其 `title` 属性里；输入区的引用 chip 同类但带 `data-ref-chip`，已排除），命中即 `preventDefault` 并在光标处经 `Menu` 的 `getAnchorRect`（portal 模式）弹出菜单。触屏设备上由 `touchstart`/`touchmove`/`touchend` 组成的长按检测走同一条打开路径（见上文「移动端」）。当前会话的工作目录由一个占据官方 `conversation.session.header.utilities` 槽位的空单元格发布 —— 与官方 open-in-app 按钮同一席位、同一标准 props（`sessionId` + `useSessions`）。URL 菜单的可选能力（内置浏览器 tab、目录选择器）按官方插件的方式在 `exports.inject` 里声明 `remote` / `remote.directoryPicker` 后读取 —— 未声明的服务读取会触发 cordis 的 `cannot get property ... without inject` 守卫，让整个菜单渲染崩溃。
 
@@ -200,7 +201,7 @@ POSIX 终端在命令结束后保留交互 shell（对齐 Terminal.app 行为）
 - **运行命令按扩展名识别。** 扩展名未映射的文件按可执行性提供「运行」：POSIX 看可执行位（客户端看不到它），Windows 按扩展名推导（`.exe`/`.bat`/`.cmd`/`.com`，chmod 在 Windows 上无效果；`.bat`/`.cmd` 默认已映射到 `cmd /c`）。无扩展名文件在 Windows 上不提供「运行」。需要时配置 `runCommands`。
 - **Windows Terminal 的运行命令经 cmd 解释。** 命令字符串由 `cmd /k` 执行，配置值里的 cmd 元字符会被展开；`.sh` 等脚本建议在 Git Bash 终端里运行（其命令在 MSYS bash 上下文中执行）。Git Bash 的「运行」依赖完整 Git for Windows 安装自带的 mintty。
 - **官方依赖精确锁版本。** Host 通过包清单定位 `@deepseek-ai/dsh-host-open-in-app` 的 `lib/types/resolver.js`（已发布 tarball 内含，并按版本尝试多种布局），依赖精确锁定在 `0.1.6-alpha.2`、不随 `dsh plugin update` 漂移；宿主 dsh 自带另一份解析库，两份可能的差异由客户端的双交集（官方探测 ∩ 插件解析）兜底。若未来版本改动布局，插件在启动时以 `file-actions:` 开头的明确错误失败，不会静默退化。
-- **卡片菜单依赖官方槽位与卡片 DOM 形态。** 菜单占的是官方 `deliverables.file.actions` 席位（影子掉官方 open-in-app 单元格），路径读自卡片预览按钮的 `title`；dsh 升级若改名席位/更换发布 id，或改动卡片 DOM（title 改存他处），卡片菜单会退化消失或官方控件回归，更新席位注册与 `cardPathOf` 即可。
+- **卡片菜单依赖官方槽位与卡片 DOM 形态。** 菜单以自己的 id 挂在官方 `deliverables.file.actions` 席位（与官方控件并排），路径读自卡片预览按钮的 `title`；dsh 升级若改名席位，或改动卡片 DOM（title 改存他处），卡片菜单会退化消失，更新席位注册与 `cardPathOf` 即可。卡片上的编辑器/文件管理器段由官方 OS 关联覆盖 —— 若官方实现在某平台查不到你装的编辑器（未关联扩展名），右键链接菜单里的插件策划目录仍是兜底。
 - **右键菜单依赖官方文件链接的 DOM 形态。** 匹配条件是「`fileMention` hash 类 + `title` 即路径」的按钮；dsh 升级若改变 markdown 渲染（类名换名、路径改存他处），右键菜单会静默失效（普通右键原样保留），更新 `FILE_LINK_SELECTOR` 即可。侧边栏等非当前会话语境里的文件链接会按当前查看会话的 `cwd` 解析路径。
 - **URL 菜单只认官方渲染出来的链接。** 官方 sanitizer 只放行 http/https/mailto，所以 `svn://`、`git@` 仅以行内代码形态被识别（整段文本恰为仓库地址）；纯文本里裸写的 URL 没有可靠边界，不作为菜单目标。svn over http(s) 与普通网页无法区分，一律给 http 菜单。
 - **克隆写入宿主文件系统，方向上与「在终端运行该文件」同级。** URL 来自聊天文本，Host 以 argv 直传并先行拒绝可解析为选项的输入（前导 `-`）、空白与超长串；私有仓库在无缓存凭据时快速失败（`GIT_TERMINAL_PROMPT=0`），不会挂起有界命令。
@@ -212,7 +213,7 @@ npm install
 node --test
 ```
 
-`node --test` 自动发现并运行 `test/` 下全部三个测试文件。测试通过 seam 注入（resolver / launcher / runCommand / stat / platform），在任意开发机上确定性覆盖 win32 / linux / darwin 三套适配器 —— 包括只读 POSIX mode 的 execute-bit 回退（stat seam 伪造 mode，不依赖 chmod），另有一条真实加载官方解析库的集成测试。`client-sweep.test.mjs` 再用最小假 DOM 加迷你 hook 运行时驱动真实的 `apply()` 与卡片菜单单元格 —— 覆盖 stub `require` 抓不到的结构类 bug，例如席位注册必须影子掉官方 `open-in-app` 单元格、路径必须读自卡片预览按钮的 `title`、官方 DOM 漂移时单元格必须渲染为空。
+`node --test` 自动发现并运行 `test/` 下全部三个测试文件。测试通过 seam 注入（resolver / launcher / runCommand / stat / platform），在任意开发机上确定性覆盖 win32 / linux / darwin 三套适配器 —— 包括只读 POSIX mode 的 execute-bit 回退（stat seam 伪造 mode，不依赖 chmod），另有一条真实加载官方解析库的集成测试。`client-sweep.test.mjs` 再用最小假 DOM 加迷你 hook 运行时驱动真实的 `apply()` 与卡片菜单单元格 —— 覆盖 stub `require` 抓不到的结构类 bug，例如席位注册必须保持自己的 id（共存，绝不影子掉官方 `open-in-app` 单元格）、卡片槽位菜单必须裁剪到终端 + 复制段、路径必须读自卡片预览按钮的 `title`、官方 DOM 漂移时单元格必须渲染为空。
 
 > [!TIP]
 > 通过 `link:` 安装时，改动 `lib/client.js` 会热替换进运行中的 `dsh web`，无需重启；Host 半边的改动需要重启 —— 且 checkout 必须先 `npm install`（依赖从 checkout 的 `node_modules` 解析）。
