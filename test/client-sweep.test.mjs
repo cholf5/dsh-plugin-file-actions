@@ -25,7 +25,7 @@ const nativeApps = [
   { id: 'vscode', name: 'Visual Studio Code', default: false, icon: null },
 ]
 
-const stubComponent = (name) => function Stub() { return null }
+const stubComponent = (name) => Object.defineProperty(function Stub() { return null }, 'name', { value: name })
 
 function makeElement(tagName, attrs = {}, parent = null) {
   const element = {
@@ -572,6 +572,19 @@ test('the absorbed rows keep their place and gray out while the association list
   const settled = cardMenu(menus).items
   assert.ok(settled.some((item) => item.id === 'fa:osapp:preview'), 'the list lands and the app rows appear in place')
   assert.equal(settled.find((item) => item.id === 'fa:open').disabled, false, 'the open row wakes up')
+})
+
+test('the trigger advertises the menu with the official chevron, never the code glyph', async () => {
+  // Regression: the coexistence round swapped this trigger to IconCode so the
+  // second cell beside the official control was distinguishable. IconCode's
+  // artwork is a literal `#` (four strokes), so once the cell replaced the
+  // official control the card's only menu affordance read as a hash sign. The
+  // trigger must carry the chevron the official control used.
+  const { menus, cardCell, react, fake } = await bootPlugin()
+  mountCard({ cardCell, react, fake, cwd: '/repo' })
+  const icon = cardMenu(menus).anchor.props.children
+  assert.equal(icon.type.name, 'Chevron', 'the trigger renders the chevron, matching the official control')
+  assert.equal(icon.props.size, 11, 'the compact chevron size matches the official chevron half')
 })
 
 test('the slot menu keeps the absorbed rows while the plugin info lands, then terminal rows appear', async () => {

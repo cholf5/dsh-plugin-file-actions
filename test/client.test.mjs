@@ -110,6 +110,12 @@ test('the card menu shadows the shipped open-in-app cell and absorbs its rows', 
   )
   assert.ok(source.includes("'button[title]'"), 'the workspace-resolved path is read from the card preview title')
   assert.ok(source.includes('[data-fa-trigger]'), 'the trigger styling rides the injected stylesheet')
+  // The trigger stands in for the official control, so it advertises the menu
+  // with the official chevron — and keeps the pre-0.1.7 numeric icon fallback.
+  assert.ok(source.includes('e(IconChevronDown, { size: 11 })'),
+    'the trigger renders the official chevron, not the coexistence-era code glyph')
+  assert.ok(source.includes('ui.IconChevronDownOutlineRegular ?? ui.IconChevronDownOutline14'),
+    'the chevron alias keeps both the 0.1.7 stroke-weight name and the legacy numeric name')
   // The slot menu now spans the absorbed official rows plus the plugin's own
   // terminal and copy sections; the message-link context menu keeps every
   // section including the plugin's editor catalog.
