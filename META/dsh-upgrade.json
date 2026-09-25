@@ -3,20 +3,24 @@
   "sopRev": 1,
   "name": "dsh-plugin-file-actions",
   "dshVersion": "0.1.7-alpha.2",
-  "verifiedAt": "2026-09-23",
-  "pluginHead": "69ceb44",
+  "verifiedAt": "2026-09-26",
+  "pluginHead": "83e9dff",
   "treeClean": true,
   "seams": [
     "resolver-official-lib-loading",
     "launcher-win32-linux-darwin-adapters",
     "runCommand-injection",
     "stat-posix-mode-execute-bit-fallback",
-    "client:menu-outside-span.menuAnchor-wrapper",
-    "client:fake-dom-apply-sweep"
+    "client:slot-deliverables.file.actions-replace-open-in-app",
+    "client:card-path-via-preview-title",
+    "client:right-click-file-link-title-selector",
+    "client:fake-dom-hook-runtime-apply-sweep"
   ],
-  "verification": { "tests": true },
-  "fixCommits": ["e05bb83 fix: resolve primitives icons through dsh 0.1.7 stroke-weight aliases (0.5.1)"],
+  "verification": { "tests": true, "vmSmoke": true },
+  "fixCommits": [
+    "e05bb83 fix: resolve primitives icons through dsh 0.1.7 stroke-weight aliases (0.5.1)",
+    "e104060 fix(client): occupy the official deliverables.file.actions seat, shadowing the shipped open-in-app cell (0.5.2)"
+  ],
   "tag": "verified-dsh/v0.1.7-alpha.2",
-  "backfilled": true,
-  "note": "Marker format introduced 2026-09-23, after the dsh 0.1.7-alpha.2 icon fix and baseline pin. README has no formal seams table - slugs taken from the seams pinned by test/. node --test re-run today: 62 pass / 0 fail. Ladder rungs beyond tests must be re-earned by one WIDE re-verify (SKILL.md §4.0)."
+  "note": "2026-09-26: the 0.5.1 marker was backfilled with tests only; the card takeover had silently died because dsh 0.1.7 removed the in-card chevron (delivered via the new deliverables.file.actions slot). Rewritten as a slot-cell registration shadowing the official open-in-app cell; this marker is earned, not backfilled. Seam slugs follow the seams pinned by test/. Ladder rungs liveProbe/clickTest stay open until the user refreshes and click-tests the card menu (client half hot-swaps via HMR; host half unchanged, no restart needed)."
 }
